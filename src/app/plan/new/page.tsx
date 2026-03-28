@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { MapPin, Calendar, Layers, Loader2, Sparkles } from "lucide-react";
+import { MapPin, Calendar, Layers, Loader2, Sparkles, ArrowRight } from "lucide-react";
 import type { MoodProfile, City } from "@/lib/types";
+import TravelDiary from "@/components/game/TravelDiary";
 
-type Step = "city" | "dates" | "config" | "generating";
+type Step = "city" | "dates" | "config" | "generating" | "diary";
 
 export default function NewPlanPage() {
   const router = useRouter();
@@ -19,6 +20,12 @@ export default function NewPlanPage() {
   const [durationMin, setDurationMin] = useState(90);
   const [moodProfile, setMoodProfile] = useState<MoodProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [generatedPlan, setGeneratedPlan] = useState<{
+    id: string;
+    cards: { title: string; description: string }[];
+    numDays: number;
+  } | null>(null);
+  const [diaryDone, setDiaryDone] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("deckTourMoodProfile");
@@ -56,12 +63,27 @@ export default function NewPlanPage() {
 
       if (!res.ok) throw new Error("Errore nella generazione");
       const data = await res.json();
-      router.push(`/plan/${data.plan.id}`);
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+      const numDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000) + 1);
+      setGeneratedPlan({
+        id: data.plan.id,
+        cards: data.cards.map((c: { title: string; description: string }) => ({
+          title: c.title,
+          description: c.description,
+        })),
+        numDays,
+      });
+      setStep("diary");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore sconosciuto");
       setStep("config");
     }
   };
+
+  const handleDiaryComplete = useCallback(() => {
+    setDiaryDone(true);
+  }, []);
 
   // Fallback cities if DB is not available
   const cityList = cities.length > 0 ? cities : [
@@ -223,6 +245,37 @@ export default function NewPlanPage() {
                 Stiamo selezionando i luoghi migliori di {selectedCity?.name} per te
               </p>
             </div>
+          </motion.div>
+        )}
+
+        {/* Diary */}
+        {step === "diary" && generatedPlan && (
+          <motion.div key="diary" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full flex flex-col gap-6">
+            <div className="text-center">
+              <p className="text-lg font-semibold mb-1">Il tuo mazzo è pronto!</p>
+              <p className="text-sm text-foreground/50">
+                {generatedPlan.cards.length} carte generate per {selectedCity?.name}
+              </p>
+            </div>
+
+            <TravelDiary
+              planId={generatedPlan.id}
+              cards={generatedPlan.cards}
+              city={selectedCity?.name ?? ""}
+              numDays={generatedPlan.numDays}
+              onComplete={handleDiaryComplete}
+            />
+
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: diaryDone ? 1 : 0.4 }}
+              onClick={() => router.push(`/plan/${generatedPlan.id}`)}
+              disabled={!diaryDone}
+              className="w-full py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-light transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+            >
+              Scopri il tuo piano
+              <ArrowRight size={18} />
+            </motion.button>
           </motion.div>
         )}
       </AnimatePresence>
