@@ -112,6 +112,8 @@ export interface QuizQuestion {
   explanation: string;
 }
 
+export type HintLevel = 1 | 2 | 3;
+
 export interface Card {
   id: string;
   plan_id: string;
@@ -164,6 +166,7 @@ export interface CheckIn {
   quiz_answers: number[];
   quiz_correct: number;
   quiz_total: number;
+  hints_revealed: HintLevel;
   photo_url: string | null;
   score_earned: number;
   voucher_unlocked: boolean;

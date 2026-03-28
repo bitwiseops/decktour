@@ -14,12 +14,17 @@ import { HistoricalInfo } from "@/components/game/HistoricalInfo";
 import { GameMap } from "@/components/map/GameMap";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { calculateCheckInScore } from "@/lib/scoring";
+import type { ScoreBreakdown } from "@/lib/scoring";
 import type { Card } from "@/lib/types";
 import type { HintLevel } from "@/components/game/GameCard";
 
 type PlayPhase = "hint" | "checkin" | "quiz" | "score" | "complete";
 
 const HINT_PROGRESSION: HintLevel[] = ["hard", "medium", "easy"];
+
+function hintStepToRevealed(step: number): number {
+  return step + 1;
+}
 
 export default function PlayPage() {
   const params = useParams();
@@ -30,7 +35,7 @@ export default function PlayPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<PlayPhase>("hint");
   const [totalScore, setTotalScore] = useState(0);
-  const [lastScore, setLastScore] = useState<{ locationScore: number; exactBonus: number; quizScore: number; timePenalty: number; total: number } | null>(null);
+  const [lastScore, setLastScore] = useState<ScoreBreakdown | null>(null);
   const [lastDistance, setLastDistance] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
   const [hintStep, setHintStep] = useState(0);
@@ -54,13 +59,20 @@ export default function PlayPage() {
     }
   }, [canRevealMore]);
 
+  const handleRevealHint = useCallback((level: HintLevel) => {
+    const idx = HINT_PROGRESSION.indexOf(level);
+    if (idx > hintStep) {
+      setHintStep(idx);
+    }
+  }, [hintStep]);
+
   const handleCheckIn = (_lat: number, _lon: number, distance: number) => {
     setLastDistance(distance);
     setTimeout(() => setPhase("quiz"), 1500);
   };
 
   const handleQuizComplete = (answers: number[], correct: number) => {
-    const score = calculateCheckInScore(lastDistance, currentCard?.base_score ?? 100, correct, timerExpired);
+    const score = calculateCheckInScore(lastDistance, currentCard?.base_score ?? 100, correct, timerExpired, hintStepToRevealed(hintStep));
     setLastScore(score);
     setTotalScore((s) => s + score.total);
     setPhase("score");
@@ -151,7 +163,7 @@ export default function PlayPage() {
               onExpired={handleTimerExpired}
             />
 
-            <GameCard card={currentCard} hintLevel={currentHintLevel} />
+            <GameCard card={currentCard} hintLevel={currentHintLevel} onRevealHint={handleRevealHint} />
 
             {canRevealMore && (
               <button
@@ -179,6 +191,7 @@ export default function PlayPage() {
                 targetLat={currentCard.lat}
                 targetLon={currentCard.lon}
                 onCheckIn={handleCheckIn}
+                hintsRevealed={hintStepToRevealed(hintStep)}
               />
             </div>
 

@@ -24,26 +24,47 @@ export const EXACT_BONUS = 50;
 export const QUIZ_CORRECT_BONUS = 25;
 export const DEFAULT_BASE_SCORE = 100;
 export const TIME_EXPIRED_PENALTY = 25;
+export const INTUITION_BONUS_MAX = 100; // only hard hint revealed
+export const INTUITION_BONUS_MEDIUM = 40; // medium hint revealed
+
+export interface ScoreBreakdown {
+  locationScore: number;
+  exactBonus: number;
+  intuitionBonus: number;
+  quizScore: number;
+  timePenalty: number;
+  total: number;
+}
+
+export function calculateIntuitionBonus(hintsRevealed: number, locationExact: boolean): number {
+  if (!locationExact) return 0;
+  if (hintsRevealed <= 1) return INTUITION_BONUS_MAX;
+  if (hintsRevealed === 2) return INTUITION_BONUS_MEDIUM;
+  return 0;
+}
 
 export function calculateCheckInScore(
   distanceMeters: number,
   baseScore: number,
   quizCorrect: number,
   timerExpired: boolean = false,
-): { locationScore: number; exactBonus: number; quizScore: number; timePenalty: number; total: number } {
+  hintsRevealed: number = 1,
+): ScoreBreakdown {
   const locationValid = distanceMeters <= CHECK_IN_RADIUS;
   const locationExact = distanceMeters <= EXACT_RADIUS;
 
   const locationScore = locationValid ? baseScore : 0;
   const exactBonus = locationExact ? EXACT_BONUS : 0;
+  const intuitionBonus = calculateIntuitionBonus(hintsRevealed, locationExact);
   const quizScore = quizCorrect * QUIZ_CORRECT_BONUS;
   const timePenalty = timerExpired ? TIME_EXPIRED_PENALTY : 0;
 
   return {
     locationScore,
     exactBonus,
+    intuitionBonus,
     quizScore,
     timePenalty,
-    total: Math.max(0, locationScore + exactBonus + quizScore - timePenalty),
+    total: Math.max(0, locationScore + exactBonus + intuitionBonus + quizScore - timePenalty),
   };
 }

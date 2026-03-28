@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Clock, MapPin, HelpCircle, Gift, Sparkles, Zap, ImageIcon } from "lucide-react";
+import { Clock, MapPin, HelpCircle, Gift, Sparkles, Zap, ImageIcon, Eye } from "lucide-react";
 import { MOODS, RARITIES, RARITY_META } from "@/lib/types";
 import type { Card } from "@/lib/types";
 
@@ -12,6 +12,7 @@ interface GameCardProps {
   card: Card;
   index?: number;
   hintLevel?: HintLevel;
+  onRevealHint?: (level: HintLevel) => void;
 }
 
 const RARITY_BORDER_CLASSES: Record<string, string> = {
@@ -38,7 +39,17 @@ function getVisibleHints(card: Card, level: HintLevel): { label: string; text: s
   return hints;
 }
 
-export function GameCard({ card, index = 0, hintLevel = "hard" }: GameCardProps) {
+const HINT_NEXT: Record<string, HintLevel> = { hard: "medium", medium: "easy" };
+const HINT_REVEAL_LABELS: Record<string, string> = {
+  hard: "Rivela indizio medio",
+  medium: "Rivela indizio facile",
+};
+const HINT_PENALTY_LABELS: Record<string, string> = {
+  hard: "\u221260 bonus",
+  medium: "\u221240 bonus",
+};
+
+export function GameCard({ card, index = 0, hintLevel = "hard", onRevealHint }: GameCardProps) {
   const [flipped, setFlipped] = useState(false);
   const rarityInfo = RARITIES.find((r) => r.id === card.rarity) ?? RARITIES[0];
   const rarityBorder = RARITY_BORDER_CLASSES[card.rarity] ?? RARITY_BORDER_CLASSES.common;
@@ -129,6 +140,22 @@ export function GameCard({ card, index = 0, hintLevel = "hard" }: GameCardProps)
                 </div>
               </motion.div>
             ))}
+
+            {onRevealHint && hintLevel !== "easy" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRevealHint(HINT_NEXT[hintLevel]);
+                }}
+                className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-foreground/50 hover:bg-white/10 hover:text-foreground/70 transition-colors"
+              >
+                <Eye size={12} />
+                {HINT_REVEAL_LABELS[hintLevel]}
+                <span className="text-amber-400/80">
+                  ({HINT_PENALTY_LABELS[hintLevel]})
+                </span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-4 text-xs text-foreground/50">
