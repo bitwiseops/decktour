@@ -127,7 +127,10 @@ export interface Card {
   duration_min: number;
   mission_type: MissionType;
   quiz_data: QuizQuestion[];
-  location_hint: string;
+  hint_hard: string;
+  hint_medium: string;
+  hint_easy: string;
+  historical_info: string;
   rarity: CardRarity;
   power_level: number;
   base_score: number;
@@ -196,7 +199,10 @@ export interface GeneratedCard {
   rarity: CardRarity;
   lat: number;
   lon: number;
-  location_hint: string;
+  hint_hard: string;
+  hint_medium: string;
+  hint_easy: string;
+  historical_info: string;
   is_temporary_event: boolean;
   source_url: string | null;
   source_name: string | null;
