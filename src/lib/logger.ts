@@ -2,6 +2,7 @@
  * Server-only logger — scrive su logs/app.log in formato JSON-lines.
  * Usare solo in contesti Node.js (API routes, instrumentation.ts).
  */
+import "server-only";
 import fs from "fs";
 import path from "path";
 

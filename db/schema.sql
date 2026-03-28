@@ -87,13 +87,11 @@ CREATE TABLE plans (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Cards
+-- Cards (city-scoped, indipendenti dal piano)
 CREATE TABLE cards (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  city_id UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
   poi_id UUID REFERENCES pois(id),
-  day_number INTEGER NOT NULL DEFAULT 1,
-  stage_order INTEGER NOT NULL DEFAULT 1,
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   moods mood_type[] DEFAULT '{}',
@@ -118,7 +116,20 @@ CREATE TABLE cards (
 );
 
 CREATE INDEX idx_cards_location ON cards USING GIST (location);
-CREATE INDEX idx_cards_plan ON cards (plan_id);
+CREATE INDEX idx_cards_city ON cards (city_id);
+
+-- Plan → Card associations (join table)
+CREATE TABLE plan_cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  day_number INTEGER NOT NULL DEFAULT 1,
+  stage_order INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(plan_id, card_id)
+);
+
+CREATE INDEX idx_plan_cards_plan ON plan_cards (plan_id);
+CREATE INDEX idx_plan_cards_card ON plan_cards (card_id);
 
 -- Game Sessions
 CREATE TABLE game_sessions (

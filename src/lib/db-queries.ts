@@ -110,7 +110,7 @@ export async function listPlans(status?: string) {
   let q = supabase
     .from("plans")
     .select(
-      "*, cities:city_id(name, country), profiles:creator_id(display_name), cards(rarity)"
+      "*, cities:city_id(name, country), profiles:creator_id(display_name), plan_cards(cards(rarity))"
     )
     .order("created_at", { ascending: false });
   if (status) q = q.eq("status", status as never);
@@ -118,18 +118,18 @@ export async function listPlans(status?: string) {
   return (data ?? []).map((d: Record<string, unknown> & {
     cities?: { name: string; country: string } | null;
     profiles?: { display_name: string } | null;
-    cards?: Array<{ rarity: string }> | null;
+    plan_cards?: Array<{ cards: { rarity: string } | null }> | null;
   }) => ({
     ...d,
     city_name: d.cities?.name ?? null,
     country: d.cities?.country ?? null,
     creator_name: d.profiles?.display_name ?? null,
-    has_rare_cards: (d.cards ?? []).some(
-      (c) => c.rarity === "rare" || c.rarity === "secret"
+    has_rare_cards: (d.plan_cards ?? []).some(
+      (pc) => pc.cards?.rarity === "rare" || pc.cards?.rarity === "secret"
     ),
     cities: undefined,
     profiles: undefined,
-    cards: undefined,
+    plan_cards: undefined,
   }));
 }
 
@@ -167,6 +167,7 @@ export async function updatePlanImageUrl(id: string, imageUrl: string) {
 
 export async function insertCards(
   planId: string,
+  cityId: string,
   cards: (GeneratedCard & { day_number: number; stage_order: number })[],
   durationMin: number
 ) {
@@ -174,9 +175,7 @@ export async function insertCards(
     const rarity = (c.rarity || "common") as CardRarity;
     const powerLevel = RARITY_POWER[rarity] ?? 1;
     return {
-      plan_id: planId,
-      day_number: c.day_number,
-      stage_order: c.stage_order,
+      city_id: cityId,
       title: c.title,
       description: c.description,
       moods: c.moods,
@@ -197,11 +196,23 @@ export async function insertCards(
     };
   });
 
-  await supabase.from("cards").insert(rows as never[]);
+  const { data: insertedCards } = await supabase
+    .from("cards")
+    .insert(rows as never[])
+    .select("id");
 
-  // Rilegge da cards_view per ottenere lat/lon calcolati
+  // Crea le associazioni plan_cards
+  const planCardRows = (insertedCards ?? []).map((card: { id: string }, i) => ({
+    plan_id: planId,
+    card_id: card.id,
+    day_number: cards[i].day_number,
+    stage_order: cards[i].stage_order,
+  }));
+  await supabase.from("plan_cards").insert(planCardRows as never[]);
+
+  // Rilegge da plan_cards_view per ottenere lat/lon calcolati e ordinamento
   const { data } = await supabase
-    .from("cards_view")
+    .from("plan_cards_view")
     .select("*")
     .eq("plan_id", planId)
     .order("day_number")
@@ -217,7 +228,7 @@ export async function updateCardImageUrl(cardId: string, imageUrl: string) {
 
 export async function getCardsByPlan(planId: string) {
   const { data } = await supabase
-    .from("cards_view")
+    .from("plan_cards_view")
     .select("*")
     .eq("plan_id", planId)
     .order("day_number")

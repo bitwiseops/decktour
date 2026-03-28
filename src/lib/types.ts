@@ -116,8 +116,9 @@ export type HintLevel = 1 | 2 | 3;
 
 export interface Card {
   id: string;
-  plan_id: string;
+  city_id: string;
   poi_id: string | null;
+  /** Presente quando la carta è restituita in contesto di un piano (via plan_cards_view) */
   day_number: number;
   stage_order: number;
   title: string;
