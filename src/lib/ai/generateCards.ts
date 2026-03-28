@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { GeneratedCard, GenerateCardsRequest, QuizQuestion, MoodProfile, CardRarity } from "@/lib/types";
-import { buildCardsPrompt, buildQuizPrompt, buildTitlePrompt } from "./prompts";
+import { buildCardsPrompt, buildDiaryPrompt, buildQuizPrompt, buildTitlePrompt } from "./prompts";
 
 const anthropic = new Anthropic();
 
@@ -53,6 +53,34 @@ export async function generateQuiz(
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
   return parseJsonFromResponse(text) as QuizQuestion[];
+}
+
+export async function generateDiaryStream(
+  cards: { title: string; description: string }[],
+  city: string,
+  numDays: number
+): Promise<ReadableStream<Uint8Array>> {
+  const stream = anthropic.messages.stream({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 512,
+    messages: [{ role: "user", content: buildDiaryPrompt(cards, city, numDays) }],
+  });
+
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      for await (const event of stream) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          controller.enqueue(encoder.encode(event.delta.text));
+        }
+      }
+      controller.close();
+    },
+  });
 }
 
 export async function generatePlanTitle(

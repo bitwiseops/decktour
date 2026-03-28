@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap } from "lucide-react";
+import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, BookOpen } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import type { Card } from "@/lib/types";
 
 interface PlanData {
   id: string;
   title: string;
+  description: string | null;
   city_name: string;
   country: string;
   date_from: string;
@@ -84,6 +85,26 @@ export default function PlanDetailPage() {
           </div>
         </div>
       </motion.div>
+
+      {/* Diary */}
+      {plan.description && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="mb-8"
+        >
+          <div className="glass rounded-xl p-5">
+            <div className="flex items-center gap-2 text-sm text-foreground/40 mb-3">
+              <BookOpen size={14} />
+              <span>Diario del Futuro</span>
+            </div>
+            <p className="text-foreground/80 leading-relaxed italic text-sm">
+              &ldquo;{plan.description}&rdquo;
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Cards by day */}
       {Object.entries(cardsByDay)

@@ -75,6 +75,28 @@ RISPONDI SOLO con un JSON array:
 }]`;
 }
 
+export function buildDiaryPrompt(
+  cards: { title: string; description: string }[],
+  city: string,
+  numDays: number
+): string {
+  const cardList = cards
+    .map((c, i) => `${i + 1}. ${c.title}: ${c.description}`)
+    .join("\n");
+
+  return `Sei un narratore di viaggi. Il giocatore sta pianificando un viaggio di ${numDays} giorni a ${city}.
+Ecco le tappe scelte finora:
+
+${cardList}
+
+Componi un breve "trailer testuale" del viaggio: un paragrafo narrativo (3-5 frasi) che intrecci le tappe in un racconto evocativo.
+Lo stile deve essere poetico, coinvolgente, in seconda persona ("Inizierai...", "Ti perderai tra...").
+NON elencare i luoghi, ma crea un flusso narrativo che li colleghi.
+Esempio di tono: "Inizierai tra i profumi del mercato per finire a guardare le stelle dal molo..."
+
+RISPONDI SOLO con il testo narrativo, senza virgolette né prefissi.`;
+}
+
 export function buildTitlePrompt(city: string, moodProfile: MoodProfile, numDays: number): string {
   const topMoods = Object.entries(moodProfile)
     .sort(([, a], [, b]) => b - a)
