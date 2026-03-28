@@ -3,38 +3,36 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { MapPin, Star, Users, Search } from "lucide-react";
+import { MapPin, Star, Users, Search, Loader2 } from "lucide-react";
 
 interface PlanSummary {
   id: string;
   title: string;
-  city: string;
-  dateFrom: string;
-  numCards: number;
+  city_name: string;
+  country: string;
+  total_executions: number;
+  avg_rating: number;
+  date_from: string;
+  creator_name: string;
 }
 
 export default function MarketplacePage() {
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load from localStorage (will use Supabase with auth)
-    const ids = JSON.parse(localStorage.getItem("deckTourPlanIds") || "[]") as string[];
-    const loaded: PlanSummary[] = [];
-    for (const id of ids) {
-      const stored = localStorage.getItem(`deckTourPlan_${id}`);
-      if (stored) {
-        const p = JSON.parse(stored);
-        loaded.push({ id: p.id, title: p.title, city: p.city, dateFrom: p.dateFrom, numCards: p.cards?.length ?? 0 });
-      }
-    }
-    setPlans(loaded.reverse());
+    fetch("/api/plans")
+      .then((r) => r.json())
+      .then((data) => setPlans(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = plans.filter(
     (p) =>
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.city.toLowerCase().includes(search.toLowerCase())
+      p.title?.toLowerCase().includes(search.toLowerCase()) ||
+      p.city_name?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -42,7 +40,6 @@ export default function MarketplacePage() {
       <h1 className="text-2xl font-bold mb-2">Esplora</h1>
       <p className="text-foreground/50 mb-6">Scopri piani di viaggio creati dalla community</p>
 
-      {/* Search */}
       <div className="relative mb-6">
         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/30" />
         <input
@@ -54,7 +51,9 @@ export default function MarketplacePage() {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" /></div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <p className="text-foreground/40">Nessun piano trovato</p>
           <p className="text-sm text-foreground/30 mt-1">Crea il primo piano per vederlo qui</p>
@@ -74,10 +73,10 @@ export default function MarketplacePage() {
               >
                 <h3 className="font-semibold text-lg mb-2">{plan.title}</h3>
                 <div className="flex flex-wrap gap-4 text-sm text-foreground/50">
-                  <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city}</span>
-                  <span className="flex items-center gap-1"><Star size={14} /> —</span>
-                  <span className="flex items-center gap-1"><Users size={14} /> 0</span>
-                  <span>{plan.numCards} carte</span>
+                  <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city_name}</span>
+                  <span className="flex items-center gap-1"><Star size={14} /> {plan.avg_rating || "—"}</span>
+                  <span className="flex items-center gap-1"><Users size={14} /> {plan.total_executions}</span>
+                  <span className="text-xs">{plan.creator_name}</span>
                 </div>
               </Link>
             </motion.div>

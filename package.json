@@ -6,26 +6,32 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "seed:pois": "npx tsx scripts/seed-permanent-pois.ts",
+    "seed:events": "npx tsx scripts/seed-events.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
-    "@supabase/auth-helpers-nextjs": "^0.15.0",
-    "@supabase/supabase-js": "^2.100.1",
     "@types/mapbox-gl": "^3.4.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",
     "mapbox-gl": "^3.20.0",
     "next": "16.2.1",
     "next-pwa": "^5.6.0",
+    "pg": "^8.20.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-map-gl": "^8.1.0",
-    "recharts": "^3.8.1"
+    "recharts": "^3.8.1",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

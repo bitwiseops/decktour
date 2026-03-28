@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateCards, generatePlanTitle } from "@/lib/ai/generateCards";
+import { getCityByName } from "@/lib/db-queries";
+import { createPlan, insertCards } from "@/lib/db-queries";
 import type { GenerateCardsRequest, GeneratedCard, MoodProfile } from "@/lib/types";
+
+const DEMO_PLAYER = "00000000-0000-0000-0000-000000000001";
 
 interface PlanRequest {
   city: string;
@@ -23,9 +27,10 @@ export async function POST(req: NextRequest) {
     const to = new Date(body.dateTo);
     const numDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000) + 1);
 
-    // Generate cards for each day in parallel
-    const dayPromises: Promise<{ day: number; stage: number; cards: GeneratedCard[] }>[] = [];
+    // Generate cards sequentially to avoid rate limits, title in parallel with first batch
+    const allCards: { day: number; stage: number; cards: GeneratedCard[] }[] = [];
     const excludePoiIds: string[] = [];
+    let titlePromise: Promise<string> | null = null;
 
     for (let day = 1; day <= numDays; day++) {
       for (let stage = 1; stage <= body.numStagesPerDay; stage++) {
@@ -41,28 +46,51 @@ export async function POST(req: NextRequest) {
           language,
           excludePoiIds,
         };
-        dayPromises.push(
-          generateCards(cardReq).then((cards) => ({ day, stage, cards }))
-        );
+
+        // Start title generation in parallel with the first card request
+        if (!titlePromise) {
+          titlePromise = generatePlanTitle(body.city, body.moodProfile, numDays);
+        }
+
+        const cards = await generateCards(cardReq);
+        allCards.push({ day, stage, cards });
       }
     }
 
-    const [allCards, title] = await Promise.all([
-      Promise.all(dayPromises),
-      generatePlanTitle(body.city, body.moodProfile, numDays),
-    ]);
+    const title = await (titlePromise ?? generatePlanTitle(body.city, body.moodProfile, numDays));
 
     // Flatten and annotate
-    const cards = allCards.flatMap((result) =>
-      result.cards.map((card, i) => ({
+    const cardsFlat = allCards.flatMap((result) =>
+      result.cards.map((card) => ({
         ...card,
         day_number: result.day,
         stage_order: result.stage,
-        card_index: i,
       }))
     );
 
-    return NextResponse.json({ title, cards, numDays });
+    // Persist to DB
+    const city = await getCityByName(body.city);
+    if (!city) {
+      return NextResponse.json({ error: `City "${body.city}" not found` }, { status: 400 });
+    }
+
+    const plan = await createPlan(
+      DEMO_PLAYER,
+      city.id,
+      title,
+      body.dateFrom,
+      body.dateTo,
+      body.numStagesPerDay,
+      body.avgStageDurationMin
+    );
+
+    const savedCards = await insertCards(plan!.id, cardsFlat, body.avgStageDurationMin);
+
+    return NextResponse.json({
+      plan: { ...plan, city_name: city.name, country: city.country },
+      cards: savedCards,
+      numDays,
+    });
   } catch (error) {
     console.error("Error generating plan:", error);
     return NextResponse.json({ error: "Failed to generate plan" }, { status: 500 });

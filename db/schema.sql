@@ -1,4 +1,6 @@
--- Deck Tour — Schema completo per Supabase
+-- Deck Tour — Schema locale PostgreSQL + PostGIS
+
+CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- Enum types
 CREATE TYPE mood_type AS ENUM ('shopping', 'food', 'art', 'nature', 'nightlife');
@@ -7,10 +9,11 @@ CREATE TYPE plan_status AS ENUM ('draft', 'published', 'archived');
 CREATE TYPE mission_type AS ENUM ('quiz', 'photo', 'both');
 CREATE TYPE session_status AS ENUM ('active', 'completed', 'abandoned');
 
--- Profiles (estende auth.users)
+-- Profiles
 CREATE TABLE profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   display_name TEXT,
+  email TEXT UNIQUE,
   avatar_url TEXT,
   mood_shopping SMALLINT DEFAULT 50 CHECK (mood_shopping BETWEEN 0 AND 100),
   mood_food SMALLINT DEFAULT 50 CHECK (mood_food BETWEEN 0 AND 100),
@@ -28,10 +31,18 @@ CREATE TABLE cities (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   country TEXT NOT NULL,
-  lat DOUBLE PRECISION NOT NULL,
-  lon DOUBLE PRECISION NOT NULL,
+  location GEOGRAPHY(Point, 4326) NOT NULL,
   image_url TEXT
 );
+
+CREATE INDEX idx_cities_location ON cities USING GIST (location);
+
+-- Convenience view to expose lat/lon
+CREATE OR REPLACE VIEW cities_view AS
+  SELECT id, name, country, image_url,
+    ST_Y(location::geometry) AS lat,
+    ST_X(location::geometry) AS lon
+  FROM cities;
 
 -- POIs
 CREATE TABLE pois (
@@ -39,8 +50,7 @@ CREATE TABLE pois (
   city_id UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  lat DOUBLE PRECISION NOT NULL,
-  lon DOUBLE PRECISION NOT NULL,
+  location GEOGRAPHY(Point, 4326) NOT NULL,
   image_url TEXT,
   moods mood_type[] DEFAULT '{}',
   event_kind event_kind DEFAULT 'permanent',
@@ -50,6 +60,9 @@ CREATE TABLE pois (
   source_name TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX idx_pois_location ON pois USING GIST (location);
+CREATE INDEX idx_pois_city ON pois (city_id);
 
 -- Plans
 CREATE TABLE plans (
@@ -83,8 +96,7 @@ CREATE TABLE cards (
   description TEXT NOT NULL DEFAULT '',
   moods mood_type[] DEFAULT '{}',
   image_url TEXT,
-  lat DOUBLE PRECISION NOT NULL,
-  lon DOUBLE PRECISION NOT NULL,
+  location GEOGRAPHY(Point, 4326) NOT NULL,
   duration_min INTEGER DEFAULT 90,
   mission_type mission_type DEFAULT 'quiz',
   quiz_data JSONB DEFAULT '[]',
@@ -95,6 +107,9 @@ CREATE TABLE cards (
   is_temporary_event BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX idx_cards_location ON cards USING GIST (location);
+CREATE INDEX idx_cards_plan ON cards (plan_id);
 
 -- Game Sessions
 CREATE TABLE game_sessions (
@@ -113,8 +128,7 @@ CREATE TABLE checkins (
   session_id UUID NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
   card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
   player_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  player_lat DOUBLE PRECISION NOT NULL,
-  player_lon DOUBLE PRECISION NOT NULL,
+  player_location GEOGRAPHY(Point, 4326) NOT NULL,
   distance_meters DOUBLE PRECISION NOT NULL,
   location_valid BOOLEAN DEFAULT FALSE,
   location_exact BOOLEAN DEFAULT FALSE,
@@ -138,23 +152,53 @@ CREATE TABLE reviews (
   UNIQUE (plan_id, reviewer_id)
 );
 
--- Haversine distance function
-CREATE OR REPLACE FUNCTION haversine_distance(
-  lat1 DOUBLE PRECISION, lon1 DOUBLE PRECISION,
-  lat2 DOUBLE PRECISION, lon2 DOUBLE PRECISION
-) RETURNS DOUBLE PRECISION AS $$
-DECLARE
-  r CONSTANT DOUBLE PRECISION := 6371000;
-  dlat DOUBLE PRECISION := radians(lat2 - lat1);
-  dlon DOUBLE PRECISION := radians(lon2 - lon1);
-  a DOUBLE PRECISION;
-BEGIN
-  a := sin(dlat/2)^2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)^2;
-  RETURN r * 2 * atan2(sqrt(a), sqrt(1-a));
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+-- ============================================================
+-- Spatial helper: find nearby POIs
+-- ============================================================
+CREATE OR REPLACE FUNCTION nearby_pois(
+  search_lat DOUBLE PRECISION,
+  search_lon DOUBLE PRECISION,
+  radius_meters DOUBLE PRECISION DEFAULT 5000,
+  lim INTEGER DEFAULT 50
+)
+RETURNS TABLE(
+  id UUID, name TEXT, description TEXT,
+  lat DOUBLE PRECISION, lon DOUBLE PRECISION,
+  distance_m DOUBLE PRECISION,
+  moods mood_type[], event_kind event_kind
+) AS $$
+  SELECT
+    p.id, p.name, p.description,
+    ST_Y(p.location::geometry) AS lat,
+    ST_X(p.location::geometry) AS lon,
+    ST_Distance(p.location, ST_SetSRID(ST_MakePoint(search_lon, search_lat), 4326)::geography) AS distance_m,
+    p.moods, p.event_kind
+  FROM pois p
+  WHERE ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(search_lon, search_lat), 4326)::geography, radius_meters)
+  ORDER BY distance_m
+  LIMIT lim;
+$$ LANGUAGE sql STABLE;
 
--- Trigger: update scores on checkin
+-- ============================================================
+-- Spatial helper: distance between player and card
+-- ============================================================
+CREATE OR REPLACE FUNCTION check_in_distance(
+  player_lat DOUBLE PRECISION, player_lon DOUBLE PRECISION,
+  card_id_param UUID
+)
+RETURNS DOUBLE PRECISION AS $$
+  SELECT ST_Distance(
+    ST_SetSRID(ST_MakePoint(player_lon, player_lat), 4326)::geography,
+    c.location
+  )
+  FROM cards c WHERE c.id = card_id_param;
+$$ LANGUAGE sql STABLE;
+
+-- ============================================================
+-- Triggers
+-- ============================================================
+
+-- Update scores on checkin
 CREATE OR REPLACE FUNCTION on_checkin_score() RETURNS TRIGGER AS $$
 BEGIN
   UPDATE game_sessions SET total_score = total_score + NEW.score_earned WHERE id = NEW.session_id;
@@ -166,7 +210,7 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_checkin_score AFTER INSERT ON checkins
   FOR EACH ROW EXECUTE FUNCTION on_checkin_score();
 
--- Trigger: update plan stats on review
+-- Update plan stats on review
 CREATE OR REPLACE FUNCTION on_review_update_plan() RETURNS TRIGGER AS $$
 BEGIN
   UPDATE plans SET
@@ -180,7 +224,10 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_review_update AFTER INSERT OR UPDATE ON reviews
   FOR EACH ROW EXECUTE FUNCTION on_review_update_plan();
 
+-- ============================================================
 -- Views
+-- ============================================================
+
 CREATE OR REPLACE VIEW leaderboard_users AS
   SELECT id, display_name, avatar_url, total_score,
     RANK() OVER (ORDER BY total_score DESC) AS rank
@@ -197,78 +244,23 @@ CREATE OR REPLACE VIEW leaderboard_plans AS
   JOIN profiles pr ON pr.id = p.creator_id
   WHERE p.status = 'published';
 
--- RLS
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pois ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cards ENABLE ROW LEVEL SECURITY;
-ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE checkins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+-- ============================================================
+-- Seed cities
+-- ============================================================
+INSERT INTO cities (name, country, location) VALUES
+  ('Roma',       'Italia',       ST_SetSRID(ST_MakePoint(12.4964, 41.9028), 4326)::geography),
+  ('Milano',     'Italia',       ST_SetSRID(ST_MakePoint(9.1900, 45.4642), 4326)::geography),
+  ('Napoli',     'Italia',       ST_SetSRID(ST_MakePoint(14.2681, 40.8518), 4326)::geography),
+  ('Firenze',    'Italia',       ST_SetSRID(ST_MakePoint(11.2558, 43.7696), 4326)::geography),
+  ('Venezia',    'Italia',       ST_SetSRID(ST_MakePoint(12.3155, 45.4408), 4326)::geography),
+  ('Torino',     'Italia',       ST_SetSRID(ST_MakePoint(7.6869, 45.0703), 4326)::geography),
+  ('Bologna',    'Italia',       ST_SetSRID(ST_MakePoint(11.3426, 44.4949), 4326)::geography),
+  ('Palermo',    'Italia',       ST_SetSRID(ST_MakePoint(13.3615, 38.1157), 4326)::geography),
+  ('Barcellona', 'Spagna',      ST_SetSRID(ST_MakePoint(2.1686, 41.3874), 4326)::geography),
+  ('Parigi',     'Francia',      ST_SetSRID(ST_MakePoint(2.3522, 48.8566), 4326)::geography),
+  ('Londra',     'Regno Unito',  ST_SetSRID(ST_MakePoint(-0.1278, 51.5074), 4326)::geography),
+  ('Amsterdam',  'Paesi Bassi',  ST_SetSRID(ST_MakePoint(4.9041, 52.3676), 4326)::geography);
 
--- Profiles: read all, write own
-CREATE POLICY "profiles_select" ON profiles FOR SELECT USING (true);
-CREATE POLICY "profiles_update" ON profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "profiles_insert" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
-
--- Cities: read all
-CREATE POLICY "cities_select" ON cities FOR SELECT USING (true);
-
--- POIs: read all
-CREATE POLICY "pois_select" ON pois FOR SELECT USING (true);
-
--- Plans: published = public, draft = creator only
-CREATE POLICY "plans_select" ON plans FOR SELECT USING (status = 'published' OR creator_id = auth.uid());
-CREATE POLICY "plans_insert" ON plans FOR INSERT WITH CHECK (creator_id = auth.uid());
-CREATE POLICY "plans_update" ON plans FOR UPDATE USING (creator_id = auth.uid());
-CREATE POLICY "plans_delete" ON plans FOR DELETE USING (creator_id = auth.uid());
-
--- Cards: visible if plan is accessible
-CREATE POLICY "cards_select" ON cards FOR SELECT USING (
-  EXISTS (SELECT 1 FROM plans WHERE plans.id = cards.plan_id AND (plans.status = 'published' OR plans.creator_id = auth.uid()))
-);
-CREATE POLICY "cards_insert" ON cards FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM plans WHERE plans.id = cards.plan_id AND plans.creator_id = auth.uid())
-);
-
--- Game sessions: player only
-CREATE POLICY "sessions_select" ON game_sessions FOR SELECT USING (player_id = auth.uid());
-CREATE POLICY "sessions_insert" ON game_sessions FOR INSERT WITH CHECK (player_id = auth.uid());
-CREATE POLICY "sessions_update" ON game_sessions FOR UPDATE USING (player_id = auth.uid());
-
--- Checkins: player only
-CREATE POLICY "checkins_select" ON checkins FOR SELECT USING (player_id = auth.uid());
-CREATE POLICY "checkins_insert" ON checkins FOR INSERT WITH CHECK (player_id = auth.uid());
-
--- Reviews: read all, write own
-CREATE POLICY "reviews_select" ON reviews FOR SELECT USING (true);
-CREATE POLICY "reviews_insert" ON reviews FOR INSERT WITH CHECK (reviewer_id = auth.uid());
-CREATE POLICY "reviews_update" ON reviews FOR UPDATE USING (reviewer_id = auth.uid());
-
--- Seed some cities
-INSERT INTO cities (name, country, lat, lon) VALUES
-  ('Roma', 'Italia', 41.9028, 12.4964),
-  ('Milano', 'Italia', 45.4642, 9.1900),
-  ('Napoli', 'Italia', 40.8518, 14.2681),
-  ('Firenze', 'Italia', 43.7696, 11.2558),
-  ('Venezia', 'Italia', 45.4408, 12.3155),
-  ('Torino', 'Italia', 45.0703, 7.6869),
-  ('Bologna', 'Italia', 44.4949, 11.3426),
-  ('Palermo', 'Italia', 38.1157, 13.3615),
-  ('Barcellona', 'Spagna', 41.3874, 2.1686),
-  ('Parigi', 'Francia', 48.8566, 2.3522),
-  ('Londra', 'Regno Unito', 51.5074, -0.1278),
-  ('Amsterdam', 'Paesi Bassi', 52.3676, 4.9041);
-
--- Auto-create profile on signup
-CREATE OR REPLACE FUNCTION handle_new_user() RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO profiles (id, display_name, avatar_url)
-  VALUES (NEW.id, NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'avatar_url');
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+-- Default demo profile
+INSERT INTO profiles (id, display_name, email) VALUES
+  ('00000000-0000-0000-0000-000000000001', 'Demo Player', 'demo@decktour.dev');

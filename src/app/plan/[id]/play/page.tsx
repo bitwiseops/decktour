@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Trophy } from "lucide-react";
+import { ChevronRight, Trophy, Loader2 } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import { CheckInButton } from "@/components/game/CheckInButton";
 import { QuizModal } from "@/components/game/QuizModal";
@@ -12,21 +12,7 @@ import { VoucherCard } from "@/components/game/VoucherCard";
 import { GameMap } from "@/components/map/GameMap";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { calculateCheckInScore } from "@/lib/scoring";
-import type { Card, MoodProfile, GeneratedCard } from "@/lib/types";
-
-interface StoredPlan {
-  id: string;
-  title: string;
-  city: string;
-  country: string;
-  dateFrom: string;
-  dateTo: string;
-  cards: (GeneratedCard & { day_number: number; stage_order: number })[];
-  numDays: number;
-  stagesPerDay: number;
-  durationMin: number;
-  moodProfile: MoodProfile;
-}
+import type { Card } from "@/lib/types";
 
 type PlayPhase = "hint" | "checkin" | "quiz" | "score" | "complete";
 
@@ -34,7 +20,8 @@ export default function PlayPage() {
   const params = useParams();
   const router = useRouter();
   const { position } = useGeolocation(true);
-  const [plan, setPlan] = useState<StoredPlan | null>(null);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<PlayPhase>("hint");
   const [totalScore, setTotalScore] = useState(0);
@@ -42,41 +29,18 @@ export default function PlayPage() {
   const [lastDistance, setLastDistance] = useState(0);
 
   useEffect(() => {
-    const stored = localStorage.getItem(`deckTourPlan_${params.id}`);
-    if (stored) setPlan(JSON.parse(stored));
+    fetch(`/api/plans/${params.id}/cards`)
+      .then((r) => r.json())
+      .then((data) => setCards(data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [params.id]);
-
-  const cards: Card[] = useMemo(() => {
-    if (!plan) return [];
-    return plan.cards.map((c, i) => ({
-      id: `${plan.id}-card-${i}`,
-      plan_id: plan.id,
-      poi_id: null,
-      day_number: c.day_number,
-      stage_order: c.stage_order,
-      title: c.title,
-      description: c.description,
-      moods: c.moods,
-      image_url: null,
-      lat: c.lat,
-      lon: c.lon,
-      duration_min: plan.durationMin,
-      mission_type: "quiz" as const,
-      quiz_data: c.quiz_data || [],
-      location_hint: c.location_hint,
-      base_score: 100,
-      voucher_description: c.suggested_voucher || null,
-      voucher_partner: null,
-      is_temporary_event: c.is_temporary_event,
-    }));
-  }, [plan]);
 
   const currentCard = cards[currentIndex] ?? null;
   const isLastCard = currentIndex >= cards.length - 1;
 
   const handleCheckIn = (_lat: number, _lon: number, distance: number) => {
     setLastDistance(distance);
-    // Unlock quiz regardless
     setTimeout(() => setPhase("quiz"), 1500);
   };
 
@@ -97,10 +61,18 @@ export default function PlayPage() {
     }
   };
 
-  if (!plan || !currentCard) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <p className="text-foreground/50">Caricamento...</p>
+        <Loader2 size={32} className="text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!currentCard) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <p className="text-foreground/50">Nessuna carta trovata</p>
       </div>
     );
   }
@@ -113,7 +85,6 @@ export default function PlayPage() {
           <Trophy size={64} className="text-accent" />
         </motion.div>
         <h1 className="text-3xl font-bold text-center">Piano completato!</h1>
-        <p className="text-foreground/50 text-center">{plan.title}</p>
         <motion.p
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
@@ -155,7 +126,6 @@ export default function PlayPage() {
           <motion.div key="play" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
             <GameCard card={currentCard} />
 
-            {/* Map */}
             <GameMap
               cards={cards}
               activeCardIndex={currentIndex}
@@ -163,7 +133,6 @@ export default function PlayPage() {
               className="h-[200px]"
             />
 
-            {/* Check-in */}
             <div className="flex justify-center py-4">
               <CheckInButton
                 targetLat={currentCard.lat}

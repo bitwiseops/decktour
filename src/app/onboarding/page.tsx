@@ -21,7 +21,6 @@ export default function OnboardingPage() {
   };
 
   const handleContinue = () => {
-    // Store mood profile in localStorage for now (will use Supabase with auth)
     localStorage.setItem("deckTourMoodProfile", JSON.stringify(moodProfile));
     router.push("/plan/new");
   };

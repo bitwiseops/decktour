@@ -4,30 +4,15 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { MapPin, Calendar, Layers, Loader2, Sparkles } from "lucide-react";
-import type { MoodProfile, GeneratedCard } from "@/lib/types";
-
-const CITIES = [
-  { name: "Roma", country: "Italia" },
-  { name: "Milano", country: "Italia" },
-  { name: "Napoli", country: "Italia" },
-  { name: "Firenze", country: "Italia" },
-  { name: "Venezia", country: "Italia" },
-  { name: "Torino", country: "Italia" },
-  { name: "Bologna", country: "Italia" },
-  { name: "Palermo", country: "Italia" },
-  { name: "Barcellona", country: "Spagna" },
-  { name: "Parigi", country: "Francia" },
-  { name: "Londra", country: "Regno Unito" },
-  { name: "Amsterdam", country: "Paesi Bassi" },
-];
+import type { MoodProfile, City } from "@/lib/types";
 
 type Step = "city" | "dates" | "config" | "generating";
 
 export default function NewPlanPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("city");
-  const [city, setCity] = useState("");
-  const [country, setCountry] = useState("");
+  const [cities, setCities] = useState<City[]>([]);
+  const [selectedCity, setSelectedCity] = useState<City | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [stagesPerDay, setStagesPerDay] = useState(3);
@@ -40,13 +25,17 @@ export default function NewPlanPage() {
     if (stored) {
       setMoodProfile(JSON.parse(stored));
     } else {
-      // Default profile if not onboarded
       setMoodProfile({ shopping: 50, food: 50, art: 50, nature: 50, nightlife: 50 });
     }
+
+    fetch("/api/cities")
+      .then((r) => r.json())
+      .then(setCities)
+      .catch(() => {});
   }, []);
 
   const handleGenerate = async () => {
-    if (!moodProfile) return;
+    if (!moodProfile || !selectedCity) return;
     setStep("generating");
     setError(null);
 
@@ -55,8 +44,8 @@ export default function NewPlanPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          city,
-          country,
+          city: selectedCity.name,
+          country: selectedCity.country,
           moodProfile,
           dateFrom,
           dateTo,
@@ -66,36 +55,29 @@ export default function NewPlanPage() {
       });
 
       if (!res.ok) throw new Error("Errore nella generazione");
-
       const data = await res.json();
-      // Store generated plan in localStorage (will use Supabase with auth)
-      const planId = crypto.randomUUID();
-      const plan = {
-        id: planId,
-        title: data.title,
-        city,
-        country,
-        dateFrom,
-        dateTo,
-        cards: data.cards as GeneratedCard[],
-        numDays: data.numDays,
-        stagesPerDay,
-        durationMin,
-        moodProfile,
-      };
-      localStorage.setItem(`deckTourPlan_${planId}`, JSON.stringify(plan));
-
-      // Also maintain a list of plan IDs
-      const planIds = JSON.parse(localStorage.getItem("deckTourPlanIds") || "[]");
-      planIds.push(planId);
-      localStorage.setItem("deckTourPlanIds", JSON.stringify(planIds));
-
-      router.push(`/plan/${planId}`);
+      router.push(`/plan/${data.plan.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore sconosciuto");
       setStep("config");
     }
   };
+
+  // Fallback cities if DB is not available
+  const cityList = cities.length > 0 ? cities : [
+    { id: "1", name: "Roma", country: "Italia", lat: 41.9, lon: 12.5, image_url: null },
+    { id: "2", name: "Milano", country: "Italia", lat: 45.5, lon: 9.2, image_url: null },
+    { id: "3", name: "Napoli", country: "Italia", lat: 40.9, lon: 14.3, image_url: null },
+    { id: "4", name: "Firenze", country: "Italia", lat: 43.8, lon: 11.3, image_url: null },
+    { id: "5", name: "Venezia", country: "Italia", lat: 45.4, lon: 12.3, image_url: null },
+    { id: "6", name: "Torino", country: "Italia", lat: 45.1, lon: 7.7, image_url: null },
+    { id: "7", name: "Bologna", country: "Italia", lat: 44.5, lon: 11.3, image_url: null },
+    { id: "8", name: "Palermo", country: "Italia", lat: 38.1, lon: 13.4, image_url: null },
+    { id: "9", name: "Barcellona", country: "Spagna", lat: 41.4, lon: 2.2, image_url: null },
+    { id: "10", name: "Parigi", country: "Francia", lat: 48.9, lon: 2.4, image_url: null },
+    { id: "11", name: "Londra", country: "Regno Unito", lat: 51.5, lon: -0.1, image_url: null },
+    { id: "12", name: "Amsterdam", country: "Paesi Bassi", lat: 52.4, lon: 4.9, image_url: null },
+  ];
 
   return (
     <div className="flex flex-col items-center min-h-[calc(100vh-8rem)] px-4 py-8 max-w-lg mx-auto">
@@ -110,12 +92,12 @@ export default function NewPlanPage() {
               <MapPin size={16} /> Scegli la città
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {CITIES.map((c) => (
+              {cityList.map((c) => (
                 <button
                   key={c.name}
-                  onClick={() => { setCity(c.name); setCountry(c.country); setStep("dates"); }}
+                  onClick={() => { setSelectedCity(c); setStep("dates"); }}
                   className={`p-4 rounded-xl glass border text-left transition-all hover:border-primary/50 ${
-                    city === c.name ? "border-primary bg-primary/10" : "border-glass-border"
+                    selectedCity?.name === c.name ? "border-primary bg-primary/10" : "border-glass-border"
                   }`}
                 >
                   <p className="font-semibold">{c.name}</p>
@@ -238,7 +220,7 @@ export default function NewPlanPage() {
             <div className="text-center">
               <p className="text-lg font-semibold mb-1">L&apos;AI sta creando il tuo mazzo...</p>
               <p className="text-sm text-foreground/50">
-                Stiamo selezionando i luoghi migliori di {city} per te
+                Stiamo selezionando i luoghi migliori di {selectedCity?.name} per te
               </p>
             </div>
           </motion.div>

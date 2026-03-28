@@ -3,35 +3,50 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Calendar, Clock, MapPin, Star } from "lucide-react";
+import { Play, Calendar, Clock, MapPin, Star, Loader2 } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
-import type { Card, MoodProfile, GeneratedCard } from "@/lib/types";
+import type { Card } from "@/lib/types";
 
-interface StoredPlan {
+interface PlanData {
   id: string;
   title: string;
-  city: string;
+  city_name: string;
   country: string;
-  dateFrom: string;
-  dateTo: string;
-  cards: (GeneratedCard & { day_number: number; stage_order: number })[];
-  numDays: number;
-  stagesPerDay: number;
-  durationMin: number;
-  moodProfile: MoodProfile;
+  date_from: string;
+  date_to: string;
+  num_stages: number;
+  status: string;
 }
 
 export default function PlanDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const [plan, setPlan] = useState<StoredPlan | null>(null);
+  const [plan, setPlan] = useState<PlanData | null>(null);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem(`deckTourPlan_${params.id}`);
-    if (stored) setPlan(JSON.parse(stored));
+    Promise.all([
+      fetch(`/api/plans/${params.id}`).then((r) => r.json()),
+      fetch(`/api/plans/${params.id}/cards`).then((r) => r.json()),
+    ])
+      .then(([planData, cardsData]) => {
+        setPlan(planData);
+        setCards(cardsData);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [params.id]);
 
-  if (!plan) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 size={32} className="text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!plan || plan.id === undefined) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <p className="text-foreground/50">Piano non trovato</p>
@@ -39,33 +54,15 @@ export default function PlanDetailPage() {
     );
   }
 
-  // Convert GeneratedCards to Card-like objects for display
+  // Group cards by day
   const cardsByDay: Record<number, Card[]> = {};
-  plan.cards.forEach((c, i) => {
+  cards.forEach((c) => {
     const day = c.day_number;
     if (!cardsByDay[day]) cardsByDay[day] = [];
-    cardsByDay[day].push({
-      id: `${plan.id}-card-${i}`,
-      plan_id: plan.id,
-      poi_id: null,
-      day_number: day,
-      stage_order: c.stage_order,
-      title: c.title,
-      description: c.description,
-      moods: c.moods,
-      image_url: null,
-      lat: c.lat,
-      lon: c.lon,
-      duration_min: plan.durationMin,
-      mission_type: "quiz",
-      quiz_data: c.quiz_data || [],
-      location_hint: c.location_hint,
-      base_score: 100,
-      voucher_description: c.suggested_voucher || null,
-      voucher_partner: null,
-      is_temporary_event: c.is_temporary_event,
-    });
+    cardsByDay[day].push(c);
   });
+
+  const numDays = Object.keys(cardsByDay).length;
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
@@ -76,10 +73,10 @@ export default function PlanDetailPage() {
             {plan.title}
           </h1>
           <div className="flex flex-wrap gap-3 text-sm text-foreground/50">
-            <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city}</span>
-            <span className="flex items-center gap-1"><Calendar size={14} /> {plan.dateFrom} → {plan.dateTo}</span>
-            <span className="flex items-center gap-1"><Clock size={14} /> {plan.numDays} giorni</span>
-            <span className="flex items-center gap-1"><Star size={14} /> {plan.cards.length} carte</span>
+            <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city_name}</span>
+            <span className="flex items-center gap-1"><Calendar size={14} /> {plan.date_from} → {plan.date_to}</span>
+            <span className="flex items-center gap-1"><Clock size={14} /> {numDays} giorni</span>
+            <span className="flex items-center gap-1"><Star size={14} /> {cards.length} carte</span>
           </div>
         </div>
       </motion.div>
@@ -87,13 +84,13 @@ export default function PlanDetailPage() {
       {/* Cards by day */}
       {Object.entries(cardsByDay)
         .sort(([a], [b]) => Number(a) - Number(b))
-        .map(([day, cards]) => (
+        .map(([day, dayCards]) => (
           <div key={day} className="mb-8">
             <h2 className="text-sm font-medium text-foreground/40 uppercase tracking-wider mb-4">
               Giorno {day}
             </h2>
             <div className="flex flex-col gap-4">
-              {cards.map((card, i) => (
+              {dayCards.map((card, i) => (
                 <GameCard key={card.id} card={card} index={i} />
               ))}
             </div>
