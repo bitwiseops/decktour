@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Clock, MapPin, HelpCircle, Gift, Sparkles, Zap } from "lucide-react";
+import { Clock, MapPin, HelpCircle, Gift, Sparkles, Zap, ImageIcon } from "lucide-react";
 import { MOODS, RARITIES, RARITY_META } from "@/lib/types";
 import type { Card } from "@/lib/types";
 
@@ -37,18 +37,18 @@ export function GameCard({ card, index = 0 }: GameCardProps) {
       >
         {/* Front */}
         <div className={`backface-hidden absolute inset-0 rounded-2xl overflow-hidden glass border ${rarityBorder}`}>
-          <div
-            className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"
-            style={{
-              backgroundImage: card.image_url ? `url(${card.image_url})` : undefined,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
-          />
-          {!card.image_url && (
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-purple-900/30" />
+          {card.image_url ? (
+            <img
+              src={card.image_url}
+              alt={card.title}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-purple-900/30 flex items-center justify-center">
+              <ImageIcon size={48} className="text-foreground/10" />
+            </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
           <div className="relative h-full flex flex-col justify-end p-5 gap-3">
             <div className="self-start flex items-center gap-2">

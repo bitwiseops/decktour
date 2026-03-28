@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateCards, generatePlanTitle } from "@/lib/ai/generateCards";
+import { generateCardImage } from "@/lib/ai/generateImage";
 import { getCityByName } from "@/lib/db-queries";
-import { createPlan, insertCards } from "@/lib/db-queries";
+import { createPlan, insertCards, updateCardImageUrl } from "@/lib/db-queries";
 import type { GenerateCardsRequest, GeneratedCard, MoodProfile } from "@/lib/types";
 
 const DEMO_PLAYER = "00000000-0000-0000-0000-000000000001";
@@ -85,6 +86,25 @@ export async function POST(req: NextRequest) {
     );
 
     const savedCards = await insertCards(plan!.id, cardsFlat, body.avgStageDurationMin);
+
+    // Generate images asynchronously — fire and forget so plan creation is not blocked
+    if (process.env.FAL_KEY) {
+      void Promise.allSettled(
+        savedCards.map(async (card) => {
+          try {
+            const imageUrl = await generateCardImage(
+              card.title,
+              card.description,
+              card.moods,
+              body.city
+            );
+            await updateCardImageUrl(card.id, imageUrl);
+          } catch (err) {
+            console.error(`Failed to generate image for card ${card.id}:`, err);
+          }
+        })
+      );
+    }
 
     return NextResponse.json({
       plan: { ...plan, city_name: city.name, country: city.country },
