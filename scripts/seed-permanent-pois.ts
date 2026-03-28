@@ -1,5 +1,6 @@
 /**
  * Genera POI permanenti per tutte le città nel DB.
+ * Questi POI generano carte con rarità "common" (sempre visitabili).
  *
  * Usage:
  *   npx tsx scripts/seed-permanent-pois.ts              # tutte le città

@@ -1,5 +1,6 @@
 /**
  * Cerca eventi nelle prossime 4 settimane per tutte le città e li salva come POI effimeri.
+ * Questi POI generano carte con rarità "rare" (eventi temporanei).
  * Da eseguire quotidianamente (cron o manuale).
  *
  * Usage:

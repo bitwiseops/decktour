@@ -22,6 +22,10 @@ REGOLE:
 - Genera un hint criptico che suggerisca il luogo senza rivelarlo
 - Considera eventi temporanei nel periodo indicato
 - Per ogni carta genera 3 domande quiz sul luogo (difficulty: medium)
+- Assegna una RARITÀ a ciascuna carta:
+  - "common": luoghi permanenti, sempre visitabili (monumenti, ristoranti, parchi)
+  - "rare": eventi temporanei (mostre, festival, concerti) attivi nel periodo di viaggio
+  - "secret": carte Serendipity — luoghi nascosti, inaspettati, fuori dai percorsi turistici, scelti in base al profilo mood del giocatore. Massimo 1 carta secret per richiesta, e solo quando il luogo è davvero sorprendente
 
 RISPONDI SOLO con un JSON array di 3 oggetti con questa struttura:
 [{
@@ -31,6 +35,7 @@ RISPONDI SOLO con un JSON array di 3 oggetti con questa struttura:
   "lat": 41.8986,
   "lon": 12.4769,
   "location_hint": "Indizio criptico sul luogo",
+  "rarity": "common",
   "is_temporary_event": false,
   "source_url": null,
   "source_name": null,
