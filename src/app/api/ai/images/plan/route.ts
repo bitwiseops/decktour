@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
             card.moods,
             body.city
           );
-          await updateCardImageUrl(card.id, imageUrl);
+          if (imageUrl) await updateCardImageUrl(card.id, imageUrl);
           return { cardId: card.id, imageUrl };
         })
       );

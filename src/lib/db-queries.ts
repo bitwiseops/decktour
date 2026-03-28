@@ -252,3 +252,67 @@ export async function nearbyPois(lat: number, lon: number, radiusM = 5000, limit
     [lat, lon, radiusM, limit]
   );
 }
+
+// ── POI selection for card generation ──
+
+export interface SelectedPoi {
+  id: string;
+  name: string;
+  description: string;
+  lat: number;
+  lon: number;
+  moods: MoodType[];
+  event_kind: "permanent" | "temporary";
+  valid_from: string | null;
+  valid_to: string | null;
+  source_url: string | null;
+  source_name: string | null;
+}
+
+/**
+ * Select POIs from DB for card generation.
+ * Filters by city, prioritizes by mood affinity, includes temporary events in date range.
+ * Returns 3 POIs per call, excluding already-used ones.
+ */
+export async function selectPoisForStage(
+  cityId: string,
+  moodProfile: MoodProfile,
+  dateFrom: string,
+  dateTo: string,
+  excludePoiIds: string[],
+  limit: number = 3
+): Promise<SelectedPoi[]> {
+  // Build mood scoring expression: higher score for POIs matching dominant moods
+  const moodWeights = `
+    CASE WHEN 'shopping' = ANY(p.moods) THEN ${moodProfile.shopping} ELSE 0 END +
+    CASE WHEN 'food' = ANY(p.moods) THEN ${moodProfile.food} ELSE 0 END +
+    CASE WHEN 'art' = ANY(p.moods) THEN ${moodProfile.art} ELSE 0 END +
+    CASE WHEN 'nature' = ANY(p.moods) THEN ${moodProfile.nature} ELSE 0 END +
+    CASE WHEN 'nightlife' = ANY(p.moods) THEN ${moodProfile.nightlife} ELSE 0 END
+  `;
+
+  const excludeClause = excludePoiIds.length > 0
+    ? `AND p.id != ALL($3::uuid[])`
+    : "";
+  const params: unknown[] = [cityId, dateTo];
+  if (excludePoiIds.length > 0) {
+    params.push(excludePoiIds);
+  }
+
+  const rows = await query<SelectedPoi>(
+    `SELECT p.id, p.name, p.description,
+       ST_Y(p.location::geometry) AS lat, ST_X(p.location::geometry) AS lon,
+       p.moods, p.event_kind, p.valid_from, p.valid_to, p.source_url, p.source_name,
+       (${moodWeights}) AS mood_score,
+       RANDOM() * 0.3 AS serendipity
+     FROM pois p
+     WHERE p.city_id = $1
+       AND (p.event_kind = 'permanent' OR (p.valid_from <= $2::date AND p.valid_to >= $2::date - interval '30 days'))
+       ${excludeClause}
+     ORDER BY mood_score + serendipity DESC
+     LIMIT ${limit}`,
+    params
+  );
+
+  return rows;
+}

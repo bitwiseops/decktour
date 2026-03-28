@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       body.city
     );
 
-    await updateCardImageUrl(body.cardId, imageUrl);
+    if (imageUrl) await updateCardImageUrl(body.cardId, imageUrl);
 
     return NextResponse.json({ imageUrl });
   } catch (error) {

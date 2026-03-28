@@ -24,6 +24,8 @@ export default function NewPlanPage() {
   const [durationMin, setDurationMin] = useState(90);
   const [moodProfile, setMoodProfile] = useState<MoodProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progressMsg, setProgressMsg] = useState("");
+  const [progressPct, setProgressPct] = useState(0);
 
   // Drafting state
   const [planTitle, setPlanTitle] = useState("");
@@ -74,6 +76,8 @@ export default function NewPlanPage() {
     if (!moodProfile || !selectedCity) return;
     setStep("generating");
     setError(null);
+    setProgressMsg("Avvio generazione...");
+    setProgressPct(0);
 
     try {
       const res = await fetch("/api/ai/plan", {
@@ -91,12 +95,55 @@ export default function NewPlanPage() {
       });
 
       if (!res.ok) throw new Error("Errore nella generazione");
-      const data = await res.json();
 
-      setPlanTitle(data.title);
-      setCoverImageUrl(data.coverImageUrl ?? null);
-      setAllCards(data.cards);
-      const keys = getStageKeys(data.cards);
+      // Parse SSE stream
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalData: { title: string; coverImageUrl: string | null; cards: DraftCard[]; numDays: number } | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ") && eventType) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (eventType === "progress") {
+                setProgressMsg(data.message);
+                if (data.total > 0) {
+                  setProgressPct(Math.round((data.current / data.total) * 100));
+                }
+              } else if (eventType === "complete") {
+                finalData = data;
+              } else if (eventType === "error") {
+                throw new Error(data.message);
+              }
+            } catch (e) {
+              if (e instanceof SyntaxError) continue;
+              throw e;
+            }
+            eventType = "";
+          }
+        }
+      }
+
+      if (!finalData) throw new Error("Generazione incompleta");
+
+      setPlanTitle(finalData.title);
+      setCoverImageUrl(finalData.coverImageUrl ?? null);
+      setAllCards(finalData.cards);
+      const keys = getStageKeys(finalData.cards);
       setStageKeys(keys);
       setCurrentStageIdx(0);
       setAcceptedCards([]);
@@ -351,9 +398,9 @@ export default function NewPlanPage() {
           </motion.div>
         )}
 
-        {/* Generating */}
+        {/* Generating with progress */}
         {step === "generating" && (
-          <motion.div key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-6 py-20">
+          <motion.div key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-6 py-20 w-full">
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
@@ -362,9 +409,17 @@ export default function NewPlanPage() {
             </motion.div>
             <div className="text-center">
               <p className="text-lg font-semibold mb-1">L&apos;AI sta creando il tuo mazzo...</p>
-              <p className="text-sm text-foreground/50">
-                Stiamo selezionando i luoghi migliori di {selectedCity?.name} per te
-              </p>
+              <p className="text-sm text-foreground/50">{progressMsg}</p>
+            </div>
+            <div className="w-full max-w-xs">
+              <div className="w-full h-2 rounded-full bg-white/10">
+                <motion.div
+                  className="h-full rounded-full bg-primary"
+                  animate={{ width: `${progressPct}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+              <p className="text-xs text-foreground/30 text-center mt-2">{progressPct}%</p>
             </div>
           </motion.div>
         )}

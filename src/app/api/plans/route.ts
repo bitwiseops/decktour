@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
               card.moods,
               body.city
             );
-            await updateCardImageUrl(card.id, cardImageUrl);
+            if (cardImageUrl) await updateCardImageUrl(card.id, cardImageUrl);
           } catch (err) {
             console.error(`Failed to generate image for card ${card.id}:`, err);
           }
