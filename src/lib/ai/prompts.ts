@@ -19,7 +19,7 @@ export function buildEnrichPoiPrompt(req: EnrichPoiRequest): string {
 LUOGO: ${req.poi.name}
 DESCRIZIONE ESISTENTE: ${req.poi.description || "Nessuna"}
 COORDINATE: ${req.poi.lat}, ${req.poi.lon}
-MOOD: ${req.poi.moods.join(", ")}
+MOOD: ${Array.isArray(req.poi.moods) ? req.poi.moods.join(", ") : String(req.poi.moods)}
 TIPO: ${req.poi.event_kind === "temporary" ? "Evento temporaneo" : "Luogo permanente"}
 ${req.poi.valid_from ? `PERIODO EVENTO: ${req.poi.valid_from} — ${req.poi.valid_to}` : ""}
 LINGUA: ${req.language}

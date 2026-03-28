@@ -300,15 +300,17 @@ export async function selectPoisForStage(
   }
 
   const rows = await query<SelectedPoi>(
-    `SELECT p.id, p.name, p.description,
-       ST_Y(p.location::geometry) AS lat, ST_X(p.location::geometry) AS lon,
-       p.moods, p.event_kind, p.valid_from, p.valid_to, p.source_url, p.source_name,
-       (${moodWeights}) AS mood_score,
-       RANDOM() * 0.3 AS serendipity
-     FROM pois p
-     WHERE p.city_id = $1
-       AND (p.event_kind = 'permanent' OR (p.valid_from <= $2::date AND p.valid_to >= $2::date - interval '30 days'))
-       ${excludeClause}
+    `SELECT * FROM (
+       SELECT p.id, p.name, p.description,
+         ST_Y(p.location::geometry) AS lat, ST_X(p.location::geometry) AS lon,
+         p.moods::text[] AS moods, p.event_kind, p.valid_from, p.valid_to, p.source_url, p.source_name,
+         (${moodWeights}) AS mood_score,
+         RANDOM() * 0.3 AS serendipity
+       FROM pois p
+       WHERE p.city_id = $1
+         AND (p.event_kind = 'permanent' OR (p.valid_from <= $2::date AND p.valid_to >= $2::date - interval '30 days'))
+         ${excludeClause}
+     ) sub
      ORDER BY mood_score + serendipity DESC
      LIMIT ${limit}`,
     params
