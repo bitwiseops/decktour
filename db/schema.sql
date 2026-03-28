@@ -7,6 +7,7 @@ CREATE TYPE mood_type AS ENUM ('shopping', 'food', 'art', 'nature', 'nightlife')
 CREATE TYPE event_kind AS ENUM ('permanent', 'temporary');
 CREATE TYPE plan_status AS ENUM ('draft', 'published', 'archived');
 CREATE TYPE mission_type AS ENUM ('quiz', 'photo', 'both');
+CREATE TYPE card_rarity AS ENUM ('common', 'rare', 'secret');
 CREATE TYPE session_status AS ENUM ('active', 'completed', 'abandoned');
 
 -- Profiles
@@ -105,6 +106,7 @@ CREATE TABLE cards (
   voucher_description TEXT,
   voucher_partner TEXT,
   is_temporary_event BOOLEAN DEFAULT FALSE,
+  rarity card_rarity DEFAULT 'common',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

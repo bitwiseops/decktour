@@ -7,6 +7,7 @@ import type {
   MoodType,
   QuizQuestion,
   GeneratedCard,
+  CardRarity,
 } from "./types";
 
 // ── Profiles ──
@@ -110,7 +111,7 @@ export async function insertCards(
     placeholders.push(
       `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++},
         $${idx++}::mood_type[], ST_SetSRID(ST_MakePoint($${idx++}, $${idx++}), 4326)::geography,
-        $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`
+        $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}::card_rarity)`
     );
     values.push(
       planId,
@@ -126,14 +127,15 @@ export async function insertCards(
       c.location_hint,
       c.suggested_voucher || null,
       null, // voucher_partner
-      c.is_temporary_event
+      c.is_temporary_event,
+      c.rarity || "common"
     );
   }
 
   return query<Card>(
     `INSERT INTO cards (plan_id, day_number, stage_order, title, description,
        moods, location, duration_min, quiz_data, location_hint,
-       voucher_description, voucher_partner, is_temporary_event)
+       voucher_description, voucher_partner, is_temporary_event, rarity)
      VALUES ${placeholders.join(", ")}
      RETURNING *, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon`,
     values

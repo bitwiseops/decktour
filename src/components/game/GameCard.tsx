@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Clock, MapPin, HelpCircle, Gift } from "lucide-react";
-import { MOODS } from "@/lib/types";
+import { Clock, MapPin, HelpCircle, Gift, Sparkles } from "lucide-react";
+import { MOODS, RARITIES } from "@/lib/types";
 import type { Card } from "@/lib/types";
 
 interface GameCardProps {
@@ -11,8 +11,16 @@ interface GameCardProps {
   index?: number;
 }
 
+const RARITY_BORDER_CLASSES: Record<string, string> = {
+  common: "border-gray-400/30",
+  rare: "border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.3)]",
+  secret: "border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.4)]",
+};
+
 export function GameCard({ card, index = 0 }: GameCardProps) {
   const [flipped, setFlipped] = useState(false);
+  const rarityInfo = RARITIES.find((r) => r.id === card.rarity) ?? RARITIES[0];
+  const rarityBorder = RARITY_BORDER_CLASSES[card.rarity] ?? RARITY_BORDER_CLASSES.common;
 
   return (
     <motion.div
@@ -28,7 +36,7 @@ export function GameCard({ card, index = 0 }: GameCardProps) {
         className="preserve-3d relative w-full aspect-[3/4]"
       >
         {/* Front */}
-        <div className="backface-hidden absolute inset-0 rounded-2xl overflow-hidden glass border border-glass-border">
+        <div className={`backface-hidden absolute inset-0 rounded-2xl overflow-hidden glass border ${rarityBorder}`}>
           <div
             className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"
             style={{
@@ -43,11 +51,22 @@ export function GameCard({ card, index = 0 }: GameCardProps) {
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
           <div className="relative h-full flex flex-col justify-end p-5 gap-3">
-            {card.is_temporary_event && (
-              <span className="self-start px-2 py-1 rounded-full bg-accent/20 text-accent text-xs font-medium">
-                Evento Temporaneo
-              </span>
-            )}
+            <div className="self-start flex items-center gap-2">
+              {card.rarity !== "common" && (
+                <span
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium"
+                  style={{ backgroundColor: `${rarityInfo.color}20`, color: rarityInfo.color }}
+                >
+                  {card.rarity === "secret" && <Sparkles size={12} />}
+                  {rarityInfo.label}
+                </span>
+              )}
+              {card.is_temporary_event && card.rarity !== "rare" && (
+                <span className="px-2 py-1 rounded-full bg-accent/20 text-accent text-xs font-medium">
+                  Evento Temporaneo
+                </span>
+              )}
+            </div>
             <h3 className="text-xl font-bold text-white leading-tight">{card.title}</h3>
             <div className="flex flex-wrap gap-2">
               {card.moods.map((moodId) => {
@@ -68,7 +87,7 @@ export function GameCard({ card, index = 0 }: GameCardProps) {
         </div>
 
         {/* Back */}
-        <div className="backface-hidden rotate-y-180 absolute inset-0 rounded-2xl overflow-hidden glass border border-glass-border p-5 flex flex-col gap-4">
+        <div className={`backface-hidden rotate-y-180 absolute inset-0 rounded-2xl overflow-hidden glass border ${rarityBorder} p-5 flex flex-col gap-4`}>
           <h3 className="text-lg font-bold text-primary-light">{card.title}</h3>
           <p className="text-sm text-foreground/80 flex-1">{card.description}</p>
 

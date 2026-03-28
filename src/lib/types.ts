@@ -86,6 +86,14 @@ export interface Plan {
 
 export type MissionType = "quiz" | "photo" | "both";
 
+export type CardRarity = "common" | "rare" | "secret";
+
+export const RARITIES: { id: CardRarity; label: string; color: string; glowColor: string }[] = [
+  { id: "common", label: "Comune", color: "#9ca3af", glowColor: "rgba(156, 163, 175, 0.3)" },
+  { id: "rare", label: "Rara", color: "#3b82f6", glowColor: "rgba(59, 130, 246, 0.4)" },
+  { id: "secret", label: "Segreta", color: "#f59e0b", glowColor: "rgba(245, 158, 11, 0.5)" },
+];
+
 export interface QuizQuestion {
   question: string;
   options: string[];
@@ -113,6 +121,7 @@ export interface Card {
   voucher_description: string | null;
   voucher_partner: string | null;
   is_temporary_event: boolean;
+  rarity: CardRarity;
 }
 
 export type SessionStatus = "active" | "completed" | "abandoned";
@@ -179,6 +188,7 @@ export interface GeneratedCard {
   source_url: string | null;
   source_name: string | null;
   suggested_voucher: string | null;
+  rarity: CardRarity;
   quiz_data: QuizQuestion[];
 }
 
