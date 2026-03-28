@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, Trophy, Loader2 } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import { CheckInButton } from "@/components/game/CheckInButton";
+import { CountdownTimer } from "@/components/game/CountdownTimer";
 import { QuizModal } from "@/components/game/QuizModal";
 import { ScoreDisplay } from "@/components/game/ScoreDisplay";
 import { VoucherCard } from "@/components/game/VoucherCard";
@@ -25,8 +26,9 @@ export default function PlayPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<PlayPhase>("hint");
   const [totalScore, setTotalScore] = useState(0);
-  const [lastScore, setLastScore] = useState<{ locationScore: number; exactBonus: number; quizScore: number; total: number } | null>(null);
+  const [lastScore, setLastScore] = useState<{ locationScore: number; exactBonus: number; quizScore: number; timePenalty: number; total: number } | null>(null);
   const [lastDistance, setLastDistance] = useState(0);
+  const [timerExpired, setTimerExpired] = useState(false);
 
   useEffect(() => {
     fetch(`/api/plans/${params.id}/cards`)
@@ -45,21 +47,26 @@ export default function PlayPage() {
   };
 
   const handleQuizComplete = (answers: number[], correct: number) => {
-    const score = calculateCheckInScore(lastDistance, currentCard?.base_score ?? 100, correct);
+    const score = calculateCheckInScore(lastDistance, currentCard?.base_score ?? 100, correct, timerExpired);
     setLastScore(score);
     setTotalScore((s) => s + score.total);
     setPhase("score");
   };
 
-  const handleNextCard = () => {
+  const handleNextCard = useCallback(() => {
     if (isLastCard) {
       setPhase("complete");
     } else {
       setCurrentIndex((i) => i + 1);
       setPhase("hint");
       setLastScore(null);
+      setTimerExpired(false);
     }
-  };
+  }, [isLastCard]);
+
+  const handleTimerExpired = useCallback(() => {
+    setTimerExpired(true);
+  }, []);
 
   if (loading) {
     return (
@@ -124,6 +131,12 @@ export default function PlayPage() {
         {/* Hint + Check-in phase */}
         {(phase === "hint" || phase === "checkin") && (
           <motion.div key="play" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
+            <CountdownTimer
+              key={currentCard.id}
+              durationMin={currentCard.duration_min}
+              onExpired={handleTimerExpired}
+            />
+
             <GameCard card={currentCard} />
 
             <GameMap
@@ -140,6 +153,18 @@ export default function PlayPage() {
                 onCheckIn={handleCheckIn}
               />
             </div>
+
+            {timerExpired && !isLastCard && (
+              <motion.button
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onClick={handleNextCard}
+                className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-foreground/60 font-semibold flex items-center justify-center gap-2 hover:bg-white/10 transition-colors"
+              >
+                Salta alla prossima carta
+                <ChevronRight size={18} />
+              </motion.button>
+            )}
           </motion.div>
         )}
 

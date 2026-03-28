@@ -1,20 +1,22 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Trophy, MapPin, Target, HelpCircle } from "lucide-react";
+import { Trophy, MapPin, Target, HelpCircle, Clock } from "lucide-react";
 
 interface ScoreDisplayProps {
   locationScore: number;
   exactBonus: number;
   quizScore: number;
+  timePenalty: number;
   total: number;
 }
 
-export function ScoreDisplay({ locationScore, exactBonus, quizScore, total }: ScoreDisplayProps) {
+export function ScoreDisplay({ locationScore, exactBonus, quizScore, timePenalty, total }: ScoreDisplayProps) {
   const items = [
-    { icon: <MapPin size={16} />, label: "Check-in", score: locationScore, color: "text-primary-light" },
-    { icon: <Target size={16} />, label: "Luogo esatto", score: exactBonus, color: "text-accent" },
-    { icon: <HelpCircle size={16} />, label: "Quiz", score: quizScore, color: "text-success" },
+    { icon: <MapPin size={16} />, label: "Check-in", score: locationScore, color: "text-primary-light", negative: false },
+    { icon: <Target size={16} />, label: "Luogo esatto", score: exactBonus, color: "text-accent", negative: false },
+    { icon: <HelpCircle size={16} />, label: "Quiz", score: quizScore, color: "text-success", negative: false },
+    { icon: <Clock size={16} />, label: "Tempo scaduto", score: timePenalty, color: "text-danger", negative: true },
   ].filter((i) => i.score > 0);
 
   return (
@@ -45,7 +47,7 @@ export function ScoreDisplay({ locationScore, exactBonus, quizScore, total }: Sc
             <span className="flex items-center gap-2 text-foreground/60">
               {item.icon} {item.label}
             </span>
-            <span className={`font-semibold ${item.color}`}>+{item.score}</span>
+            <span className={`font-semibold ${item.color}`}>{item.negative ? "-" : "+"}{item.score}</span>
           </motion.div>
         ))}
       </div>
