@@ -3,11 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { MapPin, Calendar, Layers, Loader2, Sparkles, ArrowRight } from "lucide-react";
-import type { MoodProfile, City } from "@/lib/types";
-import TravelDiary from "@/components/game/TravelDiary";
+import { MapPin, Calendar, Layers, Loader2, Sparkles } from "lucide-react";
+import { DraftingDeck } from "@/components/game/DraftingDeck";
+import type { MoodProfile, City, GeneratedCard } from "@/lib/types";
 
-type Step = "city" | "dates" | "config" | "generating" | "diary";
+type DraftCard = GeneratedCard & { day_number: number; stage_order: number };
+
+type Step = "city" | "dates" | "config" | "generating" | "drafting" | "saving";
+
+const MAX_RESHUFFLES = 2;
 
 export default function NewPlanPage() {
   const router = useRouter();
@@ -20,12 +24,16 @@ export default function NewPlanPage() {
   const [durationMin, setDurationMin] = useState(90);
   const [moodProfile, setMoodProfile] = useState<MoodProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [generatedPlan, setGeneratedPlan] = useState<{
-    id: string;
-    cards: { title: string; description: string }[];
-    numDays: number;
-  } | null>(null);
-  const [diaryDone, setDiaryDone] = useState(false);
+
+  // Drafting state
+  const [planTitle, setPlanTitle] = useState("");
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [allCards, setAllCards] = useState<DraftCard[]>([]);
+  const [stageKeys, setStageKeys] = useState<string[]>([]);
+  const [currentStageIdx, setCurrentStageIdx] = useState(0);
+  const [acceptedCards, setAcceptedCards] = useState<DraftCard[]>([]);
+  const [reshufflesLeft, setReshufflesLeft] = useState(MAX_RESHUFFLES);
+  const [reshuffleLoading, setReshuffleLoading] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("deckTourMoodProfile");
@@ -40,6 +48,27 @@ export default function NewPlanPage() {
       .then(setCities)
       .catch(() => {});
   }, []);
+
+  // Derive stage keys from allCards
+  const getStageKeys = useCallback((cards: DraftCard[]) => {
+    const keys = new Set<string>();
+    cards.forEach((c) => keys.add(`${c.day_number}-${c.stage_order}`));
+    return Array.from(keys).sort((a, b) => {
+      const [ad, as_] = a.split("-").map(Number);
+      const [bd, bs] = b.split("-").map(Number);
+      return ad !== bd ? ad - bd : as_ - bs;
+    });
+  }, []);
+
+  const cardsForStage = useCallback(
+    (stageKey: string) => {
+      const [day, stage] = stageKey.split("-").map(Number);
+      return allCards.filter(
+        (c) => c.day_number === day && c.stage_order === stage
+      );
+    },
+    [allCards]
+  );
 
   const handleGenerate = async () => {
     if (!moodProfile || !selectedCity) return;
@@ -63,27 +92,113 @@ export default function NewPlanPage() {
 
       if (!res.ok) throw new Error("Errore nella generazione");
       const data = await res.json();
-      const from = new Date(dateFrom);
-      const to = new Date(dateTo);
-      const numDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000) + 1);
-      setGeneratedPlan({
-        id: data.plan.id,
-        cards: data.cards.map((c: { title: string; description: string }) => ({
-          title: c.title,
-          description: c.description,
-        })),
-        numDays,
-      });
-      setStep("diary");
+
+      setPlanTitle(data.title);
+      setCoverImageUrl(data.coverImageUrl ?? null);
+      setAllCards(data.cards);
+      const keys = getStageKeys(data.cards);
+      setStageKeys(keys);
+      setCurrentStageIdx(0);
+      setAcceptedCards([]);
+      setReshufflesLeft(MAX_RESHUFFLES);
+      setStep("drafting");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore sconosciuto");
       setStep("config");
     }
   };
 
-  const handleDiaryComplete = useCallback(() => {
-    setDiaryDone(true);
-  }, []);
+  const handleAcceptCard = useCallback(
+    (card: DraftCard) => {
+      const updated = [...acceptedCards, card];
+      setAcceptedCards(updated);
+
+      // Move to next stage or save
+      if (currentStageIdx < stageKeys.length - 1) {
+        setCurrentStageIdx((prev) => prev + 1);
+      } else {
+        // All stages done — save the plan
+        savePlan(updated);
+      }
+    },
+    [acceptedCards, currentStageIdx, stageKeys]
+  );
+
+  const handleReshuffle = useCallback(async () => {
+    if (reshufflesLeft <= 0 || !moodProfile || !selectedCity) return;
+
+    const stageKey = stageKeys[currentStageIdx];
+    const [day, stage] = stageKey.split("-").map(Number);
+
+    setReshuffleLoading(true);
+    try {
+      const res = await fetch("/api/ai/cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city: selectedCity.name,
+          country: selectedCity.country,
+          moodProfile,
+          dayNumber: day,
+          stageOrder: stage,
+          durationMin,
+          dateFrom,
+          dateTo,
+          language: "italiano",
+          excludePoiIds: [],
+        }),
+      });
+
+      if (!res.ok) throw new Error("Reshuffle failed");
+      const newCards: GeneratedCard[] = await res.json();
+
+      // Replace cards for this stage
+      const tagged: DraftCard[] = newCards.map((c) => ({
+        ...c,
+        day_number: day,
+        stage_order: stage,
+      }));
+
+      setAllCards((prev) => [
+        ...prev.filter((c) => !(c.day_number === day && c.stage_order === stage)),
+        ...tagged,
+      ]);
+      setReshufflesLeft((prev) => prev - 1);
+    } catch {
+      setError("Errore nel reshuffle");
+    } finally {
+      setReshuffleLoading(false);
+    }
+  }, [reshufflesLeft, moodProfile, selectedCity, stageKeys, currentStageIdx, durationMin, dateFrom, dateTo]);
+
+  const savePlan = async (cards: DraftCard[]) => {
+    if (!selectedCity) return;
+    setStep("saving");
+
+    try {
+      const res = await fetch("/api/plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city: selectedCity.name,
+          title: planTitle,
+          coverImageUrl,
+          dateFrom,
+          dateTo,
+          numStagesPerDay: stagesPerDay,
+          avgStageDurationMin: durationMin,
+          cards,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Errore nel salvataggio");
+      const data = await res.json();
+      router.push(`/plan/${data.plan.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Errore sconosciuto");
+      setStep("drafting");
+    }
+  };
 
   // Fallback cities if DB is not available
   const cityList = cities.length > 0 ? cities : [
@@ -100,6 +215,12 @@ export default function NewPlanPage() {
     { id: "11", name: "Londra", country: "Regno Unito", lat: 51.5, lon: -0.1, image_url: null },
     { id: "12", name: "Amsterdam", country: "Paesi Bassi", lat: 52.4, lon: 4.9, image_url: null },
   ];
+
+  const currentStageKey = stageKeys[currentStageIdx];
+  const currentStageCards = currentStageKey ? cardsForStage(currentStageKey) : [];
+  const [currentDay, currentStage] = currentStageKey
+    ? currentStageKey.split("-").map(Number)
+    : [0, 0];
 
   return (
     <div className="flex flex-col items-center min-h-[calc(100vh-8rem)] px-4 py-8 max-w-lg mx-auto">
@@ -248,34 +369,76 @@ export default function NewPlanPage() {
           </motion.div>
         )}
 
-        {/* Diary */}
-        {step === "diary" && generatedPlan && (
-          <motion.div key="diary" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full flex flex-col gap-6">
-            <div className="text-center">
-              <p className="text-lg font-semibold mb-1">Il tuo mazzo è pronto!</p>
-              <p className="text-sm text-foreground/50">
-                {generatedPlan.cards.length} carte generate per {selectedCity?.name}
-              </p>
+        {/* Drafting */}
+        {step === "drafting" && currentStageKey && (
+          <motion.div
+            key={`draft-${currentStageKey}`}
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -50 }}
+            className="w-full"
+          >
+            {/* Stage progress header */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm text-foreground/50">
+                  Giorno {currentDay} — Tappa {currentStage}
+                </p>
+                <p className="text-xs text-foreground/30">
+                  {currentStageIdx + 1} di {stageKeys.length} tappe
+                </p>
+              </div>
+              <div className="flex gap-1">
+                {stageKeys.map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-2 h-2 rounded-full transition-colors ${
+                      i < currentStageIdx
+                        ? "bg-success"
+                        : i === currentStageIdx
+                        ? "bg-primary"
+                        : "bg-white/10"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
 
-            <TravelDiary
-              planId={generatedPlan.id}
-              cards={generatedPlan.cards}
-              city={selectedCity?.name ?? ""}
-              numDays={generatedPlan.numDays}
-              onComplete={handleDiaryComplete}
-            />
+            <h2 className="text-lg font-semibold mb-1 text-center">Scegli la tua carta</h2>
+            <p className="text-sm text-foreground/40 text-center mb-5">
+              Scopri le carte, scarta quelle che non vuoi, scegli la migliore
+            </p>
 
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: diaryDone ? 1 : 0.4 }}
-              onClick={() => router.push(`/plan/${generatedPlan.id}`)}
-              disabled={!diaryDone}
-              className="w-full py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-light transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+            {error && (
+              <p className="text-sm text-danger text-center mb-4">{error}</p>
+            )}
+
+            <DraftingDeck
+              cards={currentStageCards}
+              reshufflesLeft={reshufflesLeft}
+              maxReshuffles={MAX_RESHUFFLES}
+              onAccept={handleAcceptCard}
+              onReshuffle={handleReshuffle}
+              loading={reshuffleLoading}
+            />
+          </motion.div>
+        )}
+
+        {/* Saving */}
+        {step === "saving" && (
+          <motion.div key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-6 py-20">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
             >
-              Scopri il tuo piano
-              <ArrowRight size={18} />
-            </motion.button>
+              <Loader2 size={48} className="text-success" />
+            </motion.div>
+            <div className="text-center">
+              <p className="text-lg font-semibold mb-1">Salvataggio del piano...</p>
+              <p className="text-sm text-foreground/50">
+                {acceptedCards.length} carte selezionate
+              </p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
