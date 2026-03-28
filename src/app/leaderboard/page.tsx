@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Trophy, Users, Map } from "lucide-react";
+import { Trophy, Users, Map, Zap } from "lucide-react";
 
 type Tab = "users" | "plans";
 
@@ -16,9 +16,9 @@ const MOCK_USERS = [
 ];
 
 const MOCK_PLANS = [
-  { rank: 1, title: "L'Anima Barocca di Roma", city: "Roma", executions: 42 },
-  { rank: 2, title: "Napoli Sottopelle", city: "Napoli", executions: 31 },
-  { rank: 3, title: "Firenze tra Luci e Ombre", city: "Firenze", executions: 28 },
+  { rank: 1, title: "L'Anima Barocca di Roma", city: "Roma", executions: 42, power_level: 23 },
+  { rank: 2, title: "Napoli Sottopelle", city: "Napoli", executions: 31, power_level: 19 },
+  { rank: 3, title: "Firenze tra Luci e Ombre", city: "Firenze", executions: 28, power_level: 15 },
 ];
 
 export default function LeaderboardPage() {
@@ -100,7 +100,12 @@ export default function LeaderboardPage() {
                 <p className="font-semibold">{plan.title}</p>
                 <p className="text-xs text-foreground/40">{plan.city}</p>
               </div>
-              <span className="text-sm text-foreground/50">{plan.executions} giocate</span>
+              <div className="flex flex-col items-end gap-1">
+                <span className="flex items-center gap-1 text-amber-400 font-semibold text-sm">
+                  <Zap size={14} /> {plan.power_level}
+                </span>
+                <span className="text-xs text-foreground/50">{plan.executions} giocate</span>
+              </div>
             </motion.div>
           ))}
         </div>

@@ -75,6 +75,7 @@ export interface Plan {
   avg_rating: number;
   total_reviews: number;
   total_executions: number;
+  power_level: number;
   total_score: number;
   created_at: string;
   updated_at: string;
@@ -93,6 +94,16 @@ export const RARITIES: { id: CardRarity; label: string; color: string; glowColor
   { id: "rare", label: "Rara", color: "#3b82f6", glowColor: "rgba(59, 130, 246, 0.4)" },
   { id: "secret", label: "Segreta", color: "#f59e0b", glowColor: "rgba(245, 158, 11, 0.5)" },
 ];
+
+export const RARITY_POWER: Record<CardRarity, number> = {
+  common: 1,
+  rare: 3,
+  secret: 5,
+};
+
+export const RARITY_META: Record<CardRarity, { label: string; color: string; glowColor: string }> = Object.fromEntries(
+  RARITIES.map((r) => [r.id, { label: r.label, color: r.color, glowColor: r.glowColor }])
+) as Record<CardRarity, { label: string; color: string; glowColor: string }>;
 
 export interface QuizQuestion {
   question: string;
@@ -117,11 +128,12 @@ export interface Card {
   mission_type: MissionType;
   quiz_data: QuizQuestion[];
   location_hint: string;
+  rarity: CardRarity;
+  power_level: number;
   base_score: number;
   voucher_description: string | null;
   voucher_partner: string | null;
   is_temporary_event: boolean;
-  rarity: CardRarity;
 }
 
 export type SessionStatus = "active" | "completed" | "abandoned";
@@ -181,6 +193,7 @@ export interface GeneratedCard {
   title: string;
   description: string;
   moods: MoodType[];
+  rarity: CardRarity;
   lat: number;
   lon: number;
   location_hint: string;
@@ -188,7 +201,6 @@ export interface GeneratedCard {
   source_url: string | null;
   source_name: string | null;
   suggested_voucher: string | null;
-  rarity: CardRarity;
   quiz_data: QuizQuestion[];
 }
 

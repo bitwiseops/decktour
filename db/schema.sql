@@ -81,6 +81,7 @@ CREATE TABLE plans (
   avg_rating NUMERIC(2,1) DEFAULT 0,
   total_reviews INTEGER DEFAULT 0,
   total_executions INTEGER DEFAULT 0,
+  power_level INTEGER DEFAULT 0,
   total_score INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
@@ -102,11 +103,12 @@ CREATE TABLE cards (
   mission_type mission_type DEFAULT 'quiz',
   quiz_data JSONB DEFAULT '[]',
   location_hint TEXT DEFAULT '',
+  rarity card_rarity DEFAULT 'common',
+  power_level INTEGER DEFAULT 1,
   base_score INTEGER DEFAULT 100,
   voucher_description TEXT,
   voucher_partner TEXT,
   is_temporary_event BOOLEAN DEFAULT FALSE,
-  rarity card_rarity DEFAULT 'common',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -212,6 +214,19 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_checkin_score AFTER INSERT ON checkins
   FOR EACH ROW EXECUTE FUNCTION on_checkin_score();
 
+-- Recalculate plan power_level when cards change
+CREATE OR REPLACE FUNCTION on_card_power_level() RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE plans SET power_level = (
+    SELECT COALESCE(SUM(power_level), 0) FROM cards WHERE plan_id = NEW.plan_id
+  ) WHERE id = NEW.plan_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_card_power_level AFTER INSERT OR UPDATE OR DELETE ON cards
+  FOR EACH ROW EXECUTE FUNCTION on_card_power_level();
+
 -- Update plan stats on review
 CREATE OR REPLACE FUNCTION on_review_update_plan() RETURNS TRIGGER AS $$
 BEGIN
@@ -238,9 +253,10 @@ CREATE OR REPLACE VIEW leaderboard_users AS
 
 CREATE OR REPLACE VIEW leaderboard_plans AS
   SELECT p.id, p.title, p.image_url, p.total_executions, p.avg_rating, p.total_reviews,
+    p.power_level,
     c.name AS city_name, c.country,
     pr.display_name AS creator_name, pr.avatar_url AS creator_avatar,
-    RANK() OVER (ORDER BY p.total_executions DESC) AS rank
+    RANK() OVER (ORDER BY p.power_level DESC, p.total_executions DESC) AS rank
   FROM plans p
   JOIN cities c ON c.id = p.city_id
   JOIN profiles pr ON pr.id = p.creator_id

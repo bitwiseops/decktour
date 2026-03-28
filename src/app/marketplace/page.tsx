@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { MapPin, Star, Users, Search, Loader2 } from "lucide-react";
+import { MapPin, Star, Users, Search, Loader2, Zap } from "lucide-react";
 
 interface PlanSummary {
   id: string;
   title: string;
   city_name: string;
   country: string;
+  power_level: number;
   total_executions: number;
   avg_rating: number;
   date_from: string;
@@ -76,6 +77,9 @@ export default function MarketplacePage() {
                   <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city_name}</span>
                   <span className="flex items-center gap-1"><Star size={14} /> {plan.avg_rating || "—"}</span>
                   <span className="flex items-center gap-1"><Users size={14} /> {plan.total_executions}</span>
+                  {plan.power_level > 0 && (
+                    <span className="flex items-center gap-1 text-amber-400 font-semibold"><Zap size={14} /> {plan.power_level}</span>
+                  )}
                   <span className="text-xs">{plan.creator_name}</span>
                 </div>
               </Link>

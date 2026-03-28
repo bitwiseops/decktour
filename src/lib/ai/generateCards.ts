@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { GeneratedCard, GenerateCardsRequest, QuizQuestion, MoodProfile } from "@/lib/types";
+import type { GeneratedCard, GenerateCardsRequest, QuizQuestion, MoodProfile, CardRarity } from "@/lib/types";
 import { buildCardsPrompt, buildQuizPrompt, buildTitlePrompt } from "./prompts";
 
 const anthropic = new Anthropic();
@@ -19,7 +19,17 @@ export async function generateCards(req: GenerateCardsRequest): Promise<Generate
   });
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
-  return parseJsonFromResponse(text) as GeneratedCard[];
+  const cards = parseJsonFromResponse(text) as GeneratedCard[];
+
+  // Validate rarity, default to "common" if invalid
+  const validRarities: CardRarity[] = ["common", "rare", "secret"];
+  for (const card of cards) {
+    if (!validRarities.includes(card.rarity)) {
+      card.rarity = "common";
+    }
+  }
+
+  return cards;
 }
 
 export async function generateQuiz(

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Calendar, Clock, MapPin, Star, Loader2 } from "lucide-react";
+import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import type { Card } from "@/lib/types";
 
@@ -15,6 +15,7 @@ interface PlanData {
   date_from: string;
   date_to: string;
   num_stages: number;
+  power_level: number;
   status: string;
 }
 
@@ -77,6 +78,9 @@ export default function PlanDetailPage() {
             <span className="flex items-center gap-1"><Calendar size={14} /> {plan.date_from} → {plan.date_to}</span>
             <span className="flex items-center gap-1"><Clock size={14} /> {numDays} giorni</span>
             <span className="flex items-center gap-1"><Star size={14} /> {cards.length} carte</span>
+            {plan.power_level > 0 && (
+              <span className="flex items-center gap-1 text-amber-400 font-semibold"><Zap size={14} /> {plan.power_level}</span>
+            )}
           </div>
         </div>
       </motion.div>
