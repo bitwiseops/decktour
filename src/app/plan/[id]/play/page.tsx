@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Trophy, Loader2, Eye } from "lucide-react";
+import { ChevronRight, Trophy, Loader2, Eye, Star, BookOpen, Zap } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import { CheckInButton } from "@/components/game/CheckInButton";
 import { CountdownTimer } from "@/components/game/CountdownTimer";
@@ -21,16 +21,28 @@ import type { HintLevel } from "@/components/game/GameCard";
 type PlayPhase = "hint" | "checkin" | "quiz" | "score" | "complete";
 
 const HINT_PROGRESSION: HintLevel[] = ["hard", "medium", "easy"];
+const AUTO_ADVANCE_DELAY_MS = 4000;
 
 function hintStepToRevealed(step: number): number {
   return step + 1;
 }
+
+function getPerformanceLabel(score: number, maxScore: number): { label: string; stars: number; color: string } {
+  const pct = maxScore > 0 ? score / maxScore : 0;
+  if (pct >= 0.75) return { label: "Esploratore Leggendario", stars: 3, color: "text-accent" };
+  if (pct >= 0.45) return { label: "Avventuriero", stars: 2, color: "text-primary-light" };
+  return { label: "Viaggiatore", stars: 1, color: "text-foreground/60" };
+}
+
+// Punteggio massimo teorico per carta: 100 base + 50 exact + 100 intuition + 75 quiz (3 domande)
+const MAX_SCORE_PER_CARD = 325;
 
 export default function PlayPage() {
   const params = useParams();
   const router = useRouter();
   const { position } = useGeolocation(true);
   const [cards, setCards] = useState<Card[]>([]);
+  const [planDiary, setPlanDiary] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<PlayPhase>("hint");
@@ -40,13 +52,27 @@ export default function PlayPage() {
   const [timerExpired, setTimerExpired] = useState(false);
   const [hintStep, setHintStep] = useState(0);
   const [voucherUnlocked, setVoucherUnlocked] = useState(false);
+  const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // track final score to avoid stale closure in complete phase
+  const totalScoreRef = useRef(0);
 
   useEffect(() => {
-    fetch(`/api/plans/${params.id}/cards`)
+    // Avvia la sessione e recupera le carte
+    fetch(`/api/plans/${params.id}/play`, { method: "POST" })
       .then((r) => r.json())
-      .then((data) => setCards(data))
+      .then((data) => {
+        if (data.cards?.length) setCards(data.cards);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    // Carica il diario del piano per il reveal finale
+    fetch(`/api/plans/${params.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.description) setPlanDiary(data.description);
+      })
+      .catch(() => {});
   }, [params.id]);
 
   const currentCard = cards[currentIndex] ?? null;
@@ -54,35 +80,82 @@ export default function PlayPage() {
   const currentHintLevel = HINT_PROGRESSION[hintStep] ?? "easy";
   const canRevealMore = hintStep < HINT_PROGRESSION.length - 1;
 
+  // Auto-avanzamento quando il timer scade
+  useEffect(() => {
+    if (!timerExpired || phase !== "hint") return;
+    if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+    autoAdvanceRef.current = setTimeout(() => {
+      if (isLastCard) {
+        setPhase("complete");
+      } else {
+        setCurrentIndex((i) => i + 1);
+        setPhase("hint");
+        setLastScore(null);
+        setTimerExpired(false);
+        setHintStep(0);
+        setVoucherUnlocked(false);
+      }
+    }, AUTO_ADVANCE_DELAY_MS);
+    return () => {
+      if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+    };
+  }, [timerExpired, phase, isLastCard]);
+
   const revealNextHint = useCallback(() => {
-    if (canRevealMore) {
-      setHintStep((s) => s + 1);
-    }
+    if (canRevealMore) setHintStep((s) => s + 1);
   }, [canRevealMore]);
 
-  const handleRevealHint = useCallback((level: HintLevel) => {
-    const idx = HINT_PROGRESSION.indexOf(level);
-    if (idx > hintStep) {
-      setHintStep(idx);
-    }
-  }, [hintStep]);
+  const handleRevealHint = useCallback(
+    (level: HintLevel) => {
+      const idx = HINT_PROGRESSION.indexOf(level);
+      if (idx > hintStep) setHintStep(idx);
+    },
+    [hintStep]
+  );
 
   const handleCheckIn = (_lat: number, _lon: number, distance: number) => {
+    if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
     setLastDistance(distance);
-    setTimeout(() => setPhase("quiz"), 1500);
+    if (currentCard?.quiz_data?.length) {
+      setTimeout(() => setPhase("quiz"), 1500);
+    } else {
+      // Nessun quiz: passa direttamente al punteggio
+      const score = calculateCheckInScore(distance, currentCard?.base_score ?? 100, 0, timerExpired, hintStepToRevealed(hintStep));
+      setVoucherUnlocked(distance <= CHECK_IN_RADIUS);
+      setLastScore(score);
+      const newTotal = totalScoreRef.current + score.total;
+      totalScoreRef.current = newTotal;
+      setTotalScore(newTotal);
+      setPhase("score");
+    }
   };
 
   const handleQuizComplete = (answers: number[], correct: number) => {
-    const score = calculateCheckInScore(lastDistance, currentCard?.base_score ?? 100, correct, timerExpired, hintStepToRevealed(hintStep));
+    const score = calculateCheckInScore(
+      lastDistance,
+      currentCard?.base_score ?? 100,
+      correct,
+      timerExpired,
+      hintStepToRevealed(hintStep)
+    );
     const locationValid = lastDistance <= CHECK_IN_RADIUS;
     setVoucherUnlocked(locationValid && correct > 0);
     setLastScore(score);
-    setTotalScore((s) => s + score.total);
+    const newTotal = totalScoreRef.current + score.total;
+    totalScoreRef.current = newTotal;
+    setTotalScore(newTotal);
     setPhase("score");
   };
 
   const handleNextCard = useCallback(() => {
     if (isLastCard) {
+      // Accredita punti al profilo
+      const finalScore = totalScoreRef.current;
+      fetch("/api/profile/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ score: finalScore }),
+      }).catch(() => {});
       setPhase("complete");
     } else {
       setCurrentIndex((i) => i + 1);
@@ -106,7 +179,7 @@ export default function PlayPage() {
     );
   }
 
-  if (!currentCard) {
+  if (!currentCard && phase !== "complete") {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <p className="text-foreground/50">Nessuna carta trovata</p>
@@ -114,33 +187,101 @@ export default function PlayPage() {
     );
   }
 
-  // Game complete screen
+  // â”€â”€ Schermata finale â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (phase === "complete") {
+    const maxScore = cards.length * MAX_SCORE_PER_CARD;
+    const perf = getPerformanceLabel(totalScore, maxScore);
+
     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-8rem)] px-4 py-8 max-w-lg mx-auto gap-6">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}>
-          <Trophy size={64} className="text-accent" />
+      <div className="max-w-lg mx-auto px-4 py-8 flex flex-col gap-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-3 text-center"
+        >
+          <Trophy size={56} className="text-accent" />
+          <h1 className="text-3xl font-bold">Piano completato!</h1>
         </motion.div>
-        <h1 className="text-3xl font-bold text-center">Piano completato!</h1>
-        <motion.p
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ delay: 0.3 }}
-          className="text-5xl font-bold text-accent"
+
+        {/* Performance Score */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="glass rounded-2xl p-6 flex flex-col items-center gap-4"
         >
-          {totalScore}
-        </motion.p>
-        <p className="text-foreground/40">punti totali</p>
-        <button
-          onClick={() => router.push("/")}
-          className="mt-4 px-6 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-light transition-colors"
+          <div className="flex items-center gap-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Star
+                key={i}
+                size={28}
+                className={i < perf.stars ? "text-accent fill-accent" : "text-white/15"}
+              />
+            ))}
+          </div>
+          <p className={`text-xl font-bold ${perf.color}`}>{perf.label}</p>
+          <motion.p
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", delay: 0.4 }}
+            className="text-5xl font-bold text-accent"
+          >
+            {totalScore}
+          </motion.p>
+          <p className="text-sm text-foreground/40">punti su {maxScore} possibili</p>
+          <div className="w-full h-2 rounded-full bg-white/10">
+            <motion.div
+              className="h-full rounded-full bg-accent"
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min(100, (totalScore / maxScore) * 100)}%` }}
+              transition={{ delay: 0.5, duration: 0.8 }}
+            />
+          </div>
+        </motion.div>
+
+        {/* Diario Svelato */}
+        {planDiary && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="glass rounded-2xl p-5"
+          >
+            <div className="flex items-center gap-2 text-sm text-accent mb-3">
+              <BookOpen size={16} />
+              <span className="font-semibold">Diario Svelato</span>
+              <Zap size={14} className="ml-auto text-accent/60" />
+            </div>
+            <p className="text-foreground/90 leading-relaxed italic text-sm">
+              &ldquo;{planDiary}&rdquo;
+            </p>
+          </motion.div>
+        )}
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="flex gap-3"
         >
-          Torna alla home
-        </button>
+          <button
+            onClick={() => router.push("/leaderboard")}
+            className="flex-1 py-3 rounded-xl glass border border-glass-border text-foreground/70 font-semibold hover:border-primary/30 transition-colors"
+          >
+            Classifica
+          </button>
+          <button
+            onClick={() => router.push("/")}
+            className="flex-1 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-light transition-colors"
+          >
+            Home
+          </button>
+        </motion.div>
       </div>
     );
   }
 
+  // â”€â”€ Gioco in corso â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="max-w-lg mx-auto px-4 py-4 flex flex-col gap-4">
       {/* Progress */}
@@ -159,8 +300,8 @@ export default function PlayPage() {
 
       <AnimatePresence mode="wait">
         {/* Hint + Check-in phase */}
-        {(phase === "hint" || phase === "checkin") && (
-          <motion.div key="play" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
+        {(phase === "hint" || phase === "checkin") && currentCard && (
+          <motion.div key={`play-${currentIndex}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
             <CountdownTimer
               key={currentCard.id}
               durationMin={currentCard.duration_min}
@@ -175,7 +316,7 @@ export default function PlayPage() {
                 className="self-center flex items-center gap-2 px-4 py-2 rounded-xl glass border border-white/10 text-sm text-foreground/60 hover:text-foreground/80 transition-colors"
               >
                 <Eye size={16} />
-                Rivela indizio più facile
+                Rivela indizio piÃ¹ facile
               </button>
             )}
 
@@ -199,24 +340,23 @@ export default function PlayPage() {
               />
             </div>
 
-            {timerExpired && !isLastCard && (
-              <motion.button
+            {/* Timer scaduto: avanzamento automatico con countdown visivo */}
+            {timerExpired && (
+              <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                onClick={handleNextCard}
-                className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-foreground/60 font-semibold flex items-center justify-center gap-2 hover:bg-white/10 transition-colors"
+                className="w-full py-3 rounded-xl bg-white/5 border border-danger/30 text-danger/80 text-sm text-center"
               >
-                Salta alla prossima carta
-                <ChevronRight size={18} />
-              </motion.button>
+                Tempo scaduto â€” passaggio automatico alla prossima carta...
+              </motion.div>
             )}
           </motion.div>
         )}
 
         {/* Quiz phase */}
-        {phase === "quiz" && currentCard.quiz_data.length > 0 && (
+        {phase === "quiz" && currentCard?.quiz_data?.length > 0 && (
           <QuizModal
-            key="quiz"
+            key={`quiz-${currentIndex}`}
             questions={currentCard.quiz_data}
             onComplete={handleQuizComplete}
             onClose={() => handleQuizComplete([], 0)}
@@ -225,10 +365,10 @@ export default function PlayPage() {
 
         {/* Score phase */}
         {phase === "score" && lastScore && (
-          <motion.div key="score" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
+          <motion.div key={`score-${currentIndex}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
             <ScoreDisplay {...lastScore} />
 
-            {voucherUnlocked && currentCard.voucher_description && (
+            {voucherUnlocked && currentCard?.voucher_description && (
               <VoucherCard
                 description={currentCard.voucher_description}
                 partner={currentCard.voucher_partner}

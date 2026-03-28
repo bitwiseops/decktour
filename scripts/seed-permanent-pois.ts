@@ -10,9 +10,21 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { Pool } from "pg";
+import { existsSync, readFileSync } from "fs";
+
+// Load .env.local se presente
+if (existsSync(".env.local")) {
+  for (const line of readFileSync(".env.local", "utf8").split("\n")) {
+    const m = line.match(/^([^#=\s][^=]*)=(.*)$/);
+    if (m) (process.env as Record<string, string>)[m[1].trim()] ??= m[2].trim();
+  }
+}
+
+const connectionString = process.env.DATABASE_URL || "postgresql://decktour:decktour@localhost:5432/decktour";
 
 const db = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://decktour:decktour@localhost:5432/decktour",
+  connectionString,
+  ssl: connectionString.includes("supabase.co") ? { rejectUnauthorized: false } : false,
 });
 const anthropic = new Anthropic();
 

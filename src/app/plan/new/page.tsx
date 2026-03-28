@@ -5,11 +5,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { MapPin, Calendar, Layers, Loader2, Sparkles } from "lucide-react";
 import { DraftingDeck } from "@/components/game/DraftingDeck";
+import TravelDiary from "@/components/game/TravelDiary";
 import type { MoodProfile, City, GeneratedCard } from "@/lib/types";
 
 type DraftCard = GeneratedCard & { day_number: number; stage_order: number };
 
-type Step = "city" | "dates" | "config" | "generating" | "drafting" | "saving";
+type Step = "city" | "dates" | "config" | "generating" | "drafting" | "saving" | "diary";
 
 const MAX_RESHUFFLES = 2;
 
@@ -30,6 +31,8 @@ export default function NewPlanPage() {
   // Drafting state
   const [planTitle, setPlanTitle] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [savedPlanId, setSavedPlanId] = useState<string | null>(null);
+  const [numDays, setNumDays] = useState(1);
   const [allCards, setAllCards] = useState<DraftCard[]>([]);
   const [stageKeys, setStageKeys] = useState<string[]>([]);
   const [currentStageIdx, setCurrentStageIdx] = useState(0);
@@ -142,6 +145,7 @@ export default function NewPlanPage() {
 
       setPlanTitle(finalData.title);
       setCoverImageUrl(finalData.coverImageUrl ?? null);
+      setNumDays(finalData.numDays ?? 1);
       setAllCards(finalData.cards);
       const keys = getStageKeys(finalData.cards);
       setStageKeys(keys);
@@ -240,7 +244,8 @@ export default function NewPlanPage() {
 
       if (!res.ok) throw new Error("Errore nel salvataggio");
       const data = await res.json();
-      router.push(`/plan/${data.plan.id}`);
+      setSavedPlanId(data.plan.id);
+      setStep("diary");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore sconosciuto");
       setStep("drafting");
@@ -494,6 +499,19 @@ export default function NewPlanPage() {
                 {acceptedCards.length} carte selezionate
               </p>
             </div>
+          </motion.div>
+        )}
+
+        {/* Diary */}
+        {step === "diary" && savedPlanId && selectedCity && (
+          <motion.div key="diary" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full">
+            <TravelDiary
+              planId={savedPlanId}
+              cards={acceptedCards.map((c) => ({ title: c.title, description: c.description }))}
+              city={selectedCity.name}
+              numDays={numDays}
+              onComplete={() => router.push(`/plan/${savedPlanId}`)}
+            />
           </motion.div>
         )}
       </AnimatePresence>

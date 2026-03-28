@@ -36,11 +36,11 @@ export interface ScoreBreakdown {
   total: number;
 }
 
-export function calculateIntuitionBonus(hintsRevealed: number, locationExact: boolean): number {
-  if (!locationExact) return 0;
-  if (hintsRevealed <= 1) return INTUITION_BONUS_MAX;
-  if (hintsRevealed === 2) return INTUITION_BONUS_MEDIUM;
-  return 0;
+export function calculateIntuitionBonus(hintsRevealed: number, locationValid: boolean): number {
+  if (!locationValid) return 0;
+  if (hintsRevealed <= 1) return INTUITION_BONUS_MAX;   // solo hard hint → max bonus
+  if (hintsRevealed === 2) return INTUITION_BONUS_MEDIUM; // medium sbloccato → bonus ridotto
+  return 0; // easy sbloccato → nessun bonus
 }
 
 export function calculateCheckInScore(

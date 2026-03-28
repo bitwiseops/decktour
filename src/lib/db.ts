@@ -1,26 +1,11 @@
-import { Pool } from "pg";
+// Il layer DB usa ora @supabase/supabase-js (HTTPS) invece di pg (TCP).
+// Tutte le query passano per db-queries.ts.
+export { supabase as db } from "./supabase";
 
-const pool = new Pool({
-  connectionString:
-    process.env.DATABASE_URL || "postgresql://decktour:decktour@localhost:5432/decktour",
-});
-
-export { pool as db };
-
-// Helper for single queries
-export async function query<T = Record<string, unknown>>(
-  text: string,
-  params?: unknown[]
-): Promise<T[]> {
-  const result = await pool.query(text, params);
-  return result.rows as T[];
+// Stub mantenuti per compatibilità — non vengono eseguiti nel flusso normale
+export async function query<T = Record<string, unknown>>(): Promise<T[]> {
+  throw new Error("Direct SQL not supported in Supabase mode. Use db-queries.ts.");
 }
-
-// Helper for single row
-export async function queryOne<T = Record<string, unknown>>(
-  text: string,
-  params?: unknown[]
-): Promise<T | null> {
-  const rows = await query<T>(text, params);
-  return rows[0] ?? null;
+export async function queryOne<T = Record<string, unknown>>(): Promise<T | null> {
+  throw new Error("Direct SQL not supported in Supabase mode. Use db-queries.ts.");
 }

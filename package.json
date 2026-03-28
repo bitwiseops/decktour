@@ -10,12 +10,14 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
-    "seed:pois": "npx tsx scripts/seed-permanent-pois.ts",
-    "seed:events": "npx tsx scripts/seed-events.ts"
+    "seed:pois": "node --env-file=.env.local --import=tsx scripts/seed-permanent-pois.ts",
+    "seed:events": "node --env-file=.env.local --import=tsx scripts/seed-events.ts",
+    "setup:supabase": "node --env-file=.env.local --import=tsx scripts/setup-supabase.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@fal-ai/client": "^1.9.5",
+    "@supabase/supabase-js": "^2.100.1",
     "@types/mapbox-gl": "^3.4.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",

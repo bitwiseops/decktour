@@ -85,6 +85,11 @@ export function CheckInButton({ targetLat, targetLon, onCheckIn, disabled, hints
                 )}
               </>
             )}
+            {state === "success" && calculateIntuitionBonus(hintsRevealed, true) > 0 && (
+              <p className="text-xs text-amber-400 font-medium">
+                +{calculateIntuitionBonus(hintsRevealed, true)} Bonus Intuizione!
+              </p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
