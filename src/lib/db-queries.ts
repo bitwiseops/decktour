@@ -162,6 +162,13 @@ export async function insertCards(
   );
 }
 
+export async function updateCardImageUrl(cardId: string, imageUrl: string) {
+  return queryOne<Card>(
+    "UPDATE cards SET image_url = $2 WHERE id = $1 RETURNING *, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon",
+    [cardId, imageUrl]
+  );
+}
+
 export async function getCardsByPlan(planId: string) {
   return query<Card & { lat: number; lon: number }>(
     `SELECT c.*, ST_Y(c.location::geometry) AS lat, ST_X(c.location::geometry) AS lon
