@@ -30,6 +30,11 @@ REGOLE:
   - "common": luoghi permanenti, sempre visitabili (monumenti, ristoranti, parchi)
   - "rare": eventi temporanei (mostre, festival, concerti) attivi nel periodo di viaggio
   - "secret": carte Serendipity — luoghi nascosti, inaspettati, fuori dai percorsi turistici, scelti in base al profilo mood del giocatore. Massimo 1 carta secret per richiesta, e solo quando il luogo è davvero sorprendente
+- VOUCHER: Per ogni carta, genera un voucher realistico con un partner REALE nel raggio della tappa:
+  - "suggested_voucher": descrizione del premio (es. "Sconto 10% su tutti i gelati", "Caffè omaggio con acquisto di un dolce", "Ingresso ridotto alla mostra")
+  - "suggested_voucher_partner": nome del locale/attività REALE vicino al luogo (es. "Gelateria della Palma", "Caffè Sant'Eustachio")
+  - Il partner deve essere un'attività reale entro 500 metri dal luogo della carta
+  - Il voucher deve essere coerente con i mood della carta (food → sconti ristoranti/bar, art → musei/gallerie, shopping → negozi, etc.)
 
 RISPONDI SOLO con un JSON array di 3 oggetti con questa struttura:
 [{
@@ -46,7 +51,8 @@ RISPONDI SOLO con un JSON array di 3 oggetti con questa struttura:
   "is_temporary_event": false,
   "source_url": null,
   "source_name": null,
-  "suggested_voucher": "Sconto 10% al bar vicino",
+  "suggested_voucher": "Sconto 10% su tutti i gelati artigianali",
+  "suggested_voucher_partner": "Gelateria della Palma",
   "quiz_data": [
     {
       "question": "Domanda sul luogo",

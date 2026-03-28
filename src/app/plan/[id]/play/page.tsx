@@ -13,7 +13,7 @@ import { VoucherCard } from "@/components/game/VoucherCard";
 import { HistoricalInfo } from "@/components/game/HistoricalInfo";
 import { GameMap } from "@/components/map/GameMap";
 import { useGeolocation } from "@/hooks/useGeolocation";
-import { calculateCheckInScore } from "@/lib/scoring";
+import { calculateCheckInScore, CHECK_IN_RADIUS } from "@/lib/scoring";
 import type { ScoreBreakdown } from "@/lib/scoring";
 import type { Card } from "@/lib/types";
 import type { HintLevel } from "@/components/game/GameCard";
@@ -39,6 +39,7 @@ export default function PlayPage() {
   const [lastDistance, setLastDistance] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
   const [hintStep, setHintStep] = useState(0);
+  const [voucherUnlocked, setVoucherUnlocked] = useState(false);
 
   useEffect(() => {
     fetch(`/api/plans/${params.id}/cards`)
@@ -73,6 +74,8 @@ export default function PlayPage() {
 
   const handleQuizComplete = (answers: number[], correct: number) => {
     const score = calculateCheckInScore(lastDistance, currentCard?.base_score ?? 100, correct, timerExpired, hintStepToRevealed(hintStep));
+    const locationValid = lastDistance <= CHECK_IN_RADIUS;
+    setVoucherUnlocked(locationValid && correct > 0);
     setLastScore(score);
     setTotalScore((s) => s + score.total);
     setPhase("score");
@@ -87,6 +90,7 @@ export default function PlayPage() {
       setLastScore(null);
       setTimerExpired(false);
       setHintStep(0);
+      setVoucherUnlocked(false);
     }
   }, [isLastCard]);
 
@@ -224,8 +228,13 @@ export default function PlayPage() {
           <motion.div key="score" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
             <ScoreDisplay {...lastScore} />
 
-            {currentCard.voucher_description && (
-              <VoucherCard description={currentCard.voucher_description} partner={currentCard.voucher_partner} />
+            {voucherUnlocked && currentCard.voucher_description && (
+              <VoucherCard
+                description={currentCard.voucher_description}
+                partner={currentCard.voucher_partner}
+                code={currentCard.voucher_code}
+                validityRadius={currentCard.voucher_validity_radius}
+              />
             )}
 
             <button

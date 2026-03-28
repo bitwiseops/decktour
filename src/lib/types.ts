@@ -138,6 +138,8 @@ export interface Card {
   base_score: number;
   voucher_description: string | null;
   voucher_partner: string | null;
+  voucher_code: string | null;
+  voucher_validity_radius: number;
   is_temporary_event: boolean;
 }
 
@@ -210,6 +212,7 @@ export interface GeneratedCard {
   source_url: string | null;
   source_name: string | null;
   suggested_voucher: string | null;
+  suggested_voucher_partner: string | null;
   quiz_data: QuizQuestion[];
 }
 

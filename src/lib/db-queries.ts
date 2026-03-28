@@ -1,4 +1,5 @@
 import { query, queryOne } from "./db";
+import crypto from "node:crypto";
 import type {
   MoodProfile,
   Card,
@@ -10,6 +11,10 @@ import type {
   CardRarity,
 } from "./types";
 import { RARITY_POWER } from "./types";
+
+function generateVoucherCode(): string {
+  return `DT-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+}
 
 // ── Profiles ──
 
@@ -129,11 +134,12 @@ export async function insertCards(
   for (const c of cards) {
     const rarity = c.rarity || "common";
     const powerLevel = RARITY_POWER[rarity] ?? 1;
+    const hasVoucher = Boolean(c.suggested_voucher);
     placeholders.push(
       `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++},
         $${idx++}::mood_type[], ST_SetSRID(ST_MakePoint($${idx++}, $${idx++}), 4326)::geography,
         $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++},
-        $${idx++}::card_rarity, $${idx++})`
+        $${idx++}, $${idx++}::card_rarity, $${idx++})`
     );
     values.push(
       planId,
@@ -151,7 +157,8 @@ export async function insertCards(
       c.hint_easy,
       c.historical_info,
       c.suggested_voucher || null,
-      null, // voucher_partner
+      c.suggested_voucher_partner || null,
+      hasVoucher ? generateVoucherCode() : null,
       c.is_temporary_event,
       rarity,
       powerLevel
@@ -161,8 +168,8 @@ export async function insertCards(
   return query<Card>(
     `INSERT INTO cards (plan_id, day_number, stage_order, title, description,
        moods, location, duration_min, quiz_data, hint_hard, hint_medium, hint_easy, historical_info,
-       voucher_description, voucher_partner, is_temporary_event,
-       rarity, power_level)
+       voucher_description, voucher_partner, voucher_code,
+       is_temporary_event, rarity, power_level)
      VALUES ${placeholders.join(", ")}
      RETURNING *, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon`,
     values
@@ -218,6 +225,7 @@ export async function insertCheckIn(
   hintsRevealed: number,
   scoreEarned: number
 ) {
+  const voucherUnlocked = locationValid && quizCorrect > 0;
   return queryOne(
     `INSERT INTO checkins
        (session_id, card_id, player_id, player_location,
@@ -225,12 +233,13 @@ export async function insertCheckIn(
         quiz_answers, quiz_correct, quiz_total, hints_revealed,
         score_earned, voucher_unlocked)
      VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($5, $4), 4326)::geography,
-        $6, $7, $8, $9, $10, $11, $12, $13, $7)
+        $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING *`,
     [
       sessionId, cardId, playerId, playerLat, playerLon,
       distanceMeters, locationValid, locationExact,
       JSON.stringify(quizAnswers), quizCorrect, quizTotal, hintsRevealed, scoreEarned,
+      voucherUnlocked,
     ]
   );
 }
