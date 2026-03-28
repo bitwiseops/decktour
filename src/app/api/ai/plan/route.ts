@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateCards, generatePlanTitle } from "@/lib/ai/generateCards";
-import { generateCardImage } from "@/lib/ai/generateImage";
 import { generateCoverImage } from "@/lib/ai/generateCoverImage";
-import { getCityByName } from "@/lib/db-queries";
-import { createPlan, insertCards, updateCardImageUrl, updatePlanImageUrl } from "@/lib/db-queries";
 import type { GenerateCardsRequest, GeneratedCard, MoodProfile } from "@/lib/types";
-
-const DEMO_PLAYER = "00000000-0000-0000-0000-000000000001";
 
 interface PlanRequest {
   city: string;
@@ -61,10 +56,10 @@ export async function POST(req: NextRequest) {
 
     const title = await (titlePromise ?? generatePlanTitle(body.city, body.moodProfile, numDays));
 
-    // Start cover image generation in parallel (non-blocking)
-    const coverPromise = generateCoverImage(title, body.city, body.moodProfile);
+    // Start cover image generation in parallel
+    const coverImageUrl = await generateCoverImage(title, body.city, body.moodProfile);
 
-    // Flatten and annotate
+    // Flatten and annotate with day/stage info
     const cardsFlat = allCards.flatMap((result) =>
       result.cards.map((card) => ({
         ...card,
@@ -73,52 +68,12 @@ export async function POST(req: NextRequest) {
       }))
     );
 
-    // Persist to DB
-    const city = await getCityByName(body.city);
-    if (!city) {
-      return NextResponse.json({ error: `City "${body.city}" not found` }, { status: 400 });
-    }
-
-    const plan = await createPlan(
-      DEMO_PLAYER,
-      city.id,
-      title,
-      body.dateFrom,
-      body.dateTo,
-      body.numStagesPerDay,
-      body.avgStageDurationMin
-    );
-
-    const savedCards = await insertCards(plan!.id, cardsFlat, body.avgStageDurationMin);
-
-    // Await cover image and save to plan
-    const imageUrl = await coverPromise;
-    if (imageUrl) {
-      await updatePlanImageUrl(plan!.id, imageUrl);
-    }
-
-    // Generate card images asynchronously — fire and forget so plan creation is not blocked
-    if (process.env.FAL_KEY) {
-      void Promise.allSettled(
-        savedCards.map(async (card) => {
-          try {
-            const cardImageUrl = await generateCardImage(
-              card.title,
-              card.description,
-              card.moods,
-              body.city
-            );
-            await updateCardImageUrl(card.id, cardImageUrl);
-          } catch (err) {
-            console.error(`Failed to generate image for card ${card.id}:`, err);
-          }
-        })
-      );
-    }
-
+    // Return draft data without persisting — the client will send accepted
+    // cards to POST /api/plans after the drafting phase.
     return NextResponse.json({
-      plan: { ...plan, image_url: imageUrl, city_name: city.name, country: city.country },
-      cards: savedCards,
+      title,
+      coverImageUrl,
+      cards: cardsFlat,
       numDays,
     });
   } catch (error) {
