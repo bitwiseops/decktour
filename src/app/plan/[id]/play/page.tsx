@@ -3,19 +3,23 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Trophy, Loader2 } from "lucide-react";
+import { ChevronRight, Trophy, Loader2, Eye } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import { CheckInButton } from "@/components/game/CheckInButton";
 import { CountdownTimer } from "@/components/game/CountdownTimer";
 import { QuizModal } from "@/components/game/QuizModal";
 import { ScoreDisplay } from "@/components/game/ScoreDisplay";
 import { VoucherCard } from "@/components/game/VoucherCard";
+import { HistoricalInfo } from "@/components/game/HistoricalInfo";
 import { GameMap } from "@/components/map/GameMap";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { calculateCheckInScore } from "@/lib/scoring";
 import type { Card } from "@/lib/types";
+import type { HintLevel } from "@/components/game/GameCard";
 
 type PlayPhase = "hint" | "checkin" | "quiz" | "score" | "complete";
+
+const HINT_PROGRESSION: HintLevel[] = ["hard", "medium", "easy"];
 
 export default function PlayPage() {
   const params = useParams();
@@ -29,6 +33,7 @@ export default function PlayPage() {
   const [lastScore, setLastScore] = useState<{ locationScore: number; exactBonus: number; quizScore: number; timePenalty: number; total: number } | null>(null);
   const [lastDistance, setLastDistance] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
+  const [hintStep, setHintStep] = useState(0);
 
   useEffect(() => {
     fetch(`/api/plans/${params.id}/cards`)
@@ -40,6 +45,14 @@ export default function PlayPage() {
 
   const currentCard = cards[currentIndex] ?? null;
   const isLastCard = currentIndex >= cards.length - 1;
+  const currentHintLevel = HINT_PROGRESSION[hintStep] ?? "easy";
+  const canRevealMore = hintStep < HINT_PROGRESSION.length - 1;
+
+  const revealNextHint = useCallback(() => {
+    if (canRevealMore) {
+      setHintStep((s) => s + 1);
+    }
+  }, [canRevealMore]);
 
   const handleCheckIn = (_lat: number, _lon: number, distance: number) => {
     setLastDistance(distance);
@@ -61,6 +74,7 @@ export default function PlayPage() {
       setPhase("hint");
       setLastScore(null);
       setTimerExpired(false);
+      setHintStep(0);
     }
   }, [isLastCard]);
 
@@ -137,7 +151,21 @@ export default function PlayPage() {
               onExpired={handleTimerExpired}
             />
 
-            <GameCard card={currentCard} />
+            <GameCard card={currentCard} hintLevel={currentHintLevel} />
+
+            {canRevealMore && (
+              <button
+                onClick={revealNextHint}
+                className="self-center flex items-center gap-2 px-4 py-2 rounded-xl glass border border-white/10 text-sm text-foreground/60 hover:text-foreground/80 transition-colors"
+              >
+                <Eye size={16} />
+                Rivela indizio più facile
+              </button>
+            )}
+
+            {currentCard.historical_info && (
+              <HistoricalInfo info={currentCard.historical_info} />
+            )}
 
             <GameMap
               cards={cards}

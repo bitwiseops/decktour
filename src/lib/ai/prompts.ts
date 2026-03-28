@@ -19,7 +19,11 @@ REGOLE:
 - Seleziona 3 luoghi REALI della città, con coordinate GPS accurate
 - Privilegia posti inaspettati mescolati con classici (serendipity)
 - Assegna 1-3 mood tags per carta tra: shopping, food, art, nature, nightlife
-- Genera un hint criptico che suggerisca il luogo senza rivelarlo
+- Genera 3 indizi progressivi per ciascun luogo:
+  - "hint_hard": molto criptico, quasi poetico, evocativo — non deve rivelare il luogo
+  - "hint_medium": dettaglio specifico riconoscibile (es. un elemento architettonico, un materiale, un colore)
+  - "hint_easy": riferimento quasi esplicito, chi conosce la città lo indovina subito
+- Genera una curiosità storica sul luogo ("historical_info"): un fatto interessante, non-spoiler, da mostrare come "Lo sapevi che..."
 - Considera eventi temporanei nel periodo indicato
 - Per ogni carta genera 3 domande quiz sul luogo (difficulty: medium)
 - Assegna una RARITÀ a ciascuna carta:
@@ -35,7 +39,10 @@ RISPONDI SOLO con un JSON array di 3 oggetti con questa struttura:
   "rarity": "common",
   "lat": 41.8986,
   "lon": 12.4769,
-  "location_hint": "Indizio criptico sul luogo",
+  "hint_hard": "Dove il tempo si piega e le ombre danzano in cerchio",
+  "hint_medium": "Cerca la fontana con i quattro fiumi",
+  "hint_easy": "La piazza più famosa del barocco romano, con l'obelisco al centro",
+  "historical_info": "La fontana centrale fu commissionata da Papa Innocenzo X nel 1651 e Bernini la progettò senza mai visitare la piazza durante i lavori",
   "is_temporary_event": false,
   "source_url": null,
   "source_name": null,

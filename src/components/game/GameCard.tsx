@@ -6,9 +6,12 @@ import { Clock, MapPin, HelpCircle, Gift, Sparkles, Zap } from "lucide-react";
 import { MOODS, RARITIES, RARITY_META } from "@/lib/types";
 import type { Card } from "@/lib/types";
 
+export type HintLevel = "hard" | "medium" | "easy";
+
 interface GameCardProps {
   card: Card;
   index?: number;
+  hintLevel?: HintLevel;
 }
 
 const RARITY_BORDER_CLASSES: Record<string, string> = {
@@ -17,10 +20,29 @@ const RARITY_BORDER_CLASSES: Record<string, string> = {
   secret: "border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.4)]",
 };
 
-export function GameCard({ card, index = 0 }: GameCardProps) {
+const HINT_LABELS: Record<HintLevel, string> = {
+  hard: "Indizio criptico",
+  medium: "Indizio medio",
+  easy: "Indizio facile",
+};
+
+function getVisibleHints(card: Card, level: HintLevel): { label: string; text: string }[] {
+  const hints: { label: string; text: string }[] = [];
+  hints.push({ label: HINT_LABELS.hard, text: card.hint_hard });
+  if (level === "medium" || level === "easy") {
+    hints.push({ label: HINT_LABELS.medium, text: card.hint_medium });
+  }
+  if (level === "easy") {
+    hints.push({ label: HINT_LABELS.easy, text: card.hint_easy });
+  }
+  return hints;
+}
+
+export function GameCard({ card, index = 0, hintLevel = "hard" }: GameCardProps) {
   const [flipped, setFlipped] = useState(false);
   const rarityInfo = RARITIES.find((r) => r.id === card.rarity) ?? RARITIES[0];
   const rarityBorder = RARITY_BORDER_CLASSES[card.rarity] ?? RARITY_BORDER_CLASSES.common;
+  const visibleHints = getVisibleHints(card, hintLevel);
 
   return (
     <motion.div
@@ -87,13 +109,26 @@ export function GameCard({ card, index = 0 }: GameCardProps) {
         </div>
 
         {/* Back */}
-        <div className={`backface-hidden rotate-y-180 absolute inset-0 rounded-2xl overflow-hidden glass border ${rarityBorder} p-5 flex flex-col gap-4`}>
+        <div className={`backface-hidden rotate-y-180 absolute inset-0 rounded-2xl overflow-hidden glass border ${rarityBorder} p-5 flex flex-col gap-3`}>
           <h3 className="text-lg font-bold text-primary-light">{card.title}</h3>
           <p className="text-sm text-foreground/80 flex-1">{card.description}</p>
 
-          <div className="flex items-start gap-2 text-sm">
-            <MapPin size={16} className="text-accent mt-0.5 shrink-0" />
-            <p className="text-foreground/60 italic">&ldquo;{card.location_hint}&rdquo;</p>
+          <div className="flex flex-col gap-2">
+            {visibleHints.map((hint, i) => (
+              <motion.div
+                key={hint.label}
+                initial={i > 0 ? { opacity: 0, y: 8 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.15 }}
+                className="flex items-start gap-2 text-sm"
+              >
+                <MapPin size={16} className="text-accent mt-0.5 shrink-0" />
+                <div>
+                  <span className="text-xs font-medium text-accent/70">{hint.label}</span>
+                  <p className="text-foreground/60 italic">&ldquo;{hint.text}&rdquo;</p>
+                </div>
+              </motion.div>
+            ))}
           </div>
 
           <div className="flex items-center gap-4 text-xs text-foreground/50">
