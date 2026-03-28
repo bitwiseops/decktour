@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, BookOpen } from "lucide-react";
+import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, BookOpen, ImageIcon } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import type { Card } from "@/lib/types";
 
@@ -11,6 +11,7 @@ interface PlanData {
   id: string;
   title: string;
   description: string | null;
+  image_url: string | null;
   city_name: string;
   country: string;
   date_from: string;
@@ -70,18 +71,35 @@ export default function PlanDetailPage() {
     <div className="max-w-lg mx-auto px-4 py-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-        <div className="glass rounded-2xl p-6">
-          <h1 className="text-2xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            {plan.title}
-          </h1>
-          <div className="flex flex-wrap gap-3 text-sm text-foreground/50">
-            <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city_name}</span>
-            <span className="flex items-center gap-1"><Calendar size={14} /> {plan.date_from} → {plan.date_to}</span>
-            <span className="flex items-center gap-1"><Clock size={14} /> {numDays} giorni</span>
-            <span className="flex items-center gap-1"><Star size={14} /> {cards.length} carte</span>
-            {plan.power_level > 0 && (
-              <span className="flex items-center gap-1 text-amber-400 font-semibold"><Zap size={14} /> {plan.power_level}</span>
-            )}
+        <div className="glass rounded-2xl overflow-hidden">
+          {/* Cover image */}
+          {plan.image_url ? (
+            <div className="relative w-full aspect-video">
+              <img
+                src={plan.image_url}
+                alt={plan.title}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+            </div>
+          ) : (
+            <div className="relative w-full aspect-video bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+              <ImageIcon size={48} className="text-foreground/20" />
+            </div>
+          )}
+          <div className="p-6">
+            <h1 className="text-2xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              {plan.title}
+            </h1>
+            <div className="flex flex-wrap gap-3 text-sm text-foreground/50">
+              <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city_name}</span>
+              <span className="flex items-center gap-1"><Calendar size={14} /> {plan.date_from} → {plan.date_to}</span>
+              <span className="flex items-center gap-1"><Clock size={14} /> {numDays} giorni</span>
+              <span className="flex items-center gap-1"><Star size={14} /> {cards.length} carte</span>
+              {plan.power_level > 0 && (
+                <span className="flex items-center gap-1 text-amber-400 font-semibold"><Zap size={14} /> {plan.power_level}</span>
+              )}
+            </div>
           </div>
         </div>
       </motion.div>

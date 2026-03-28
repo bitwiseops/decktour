@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateCards, generatePlanTitle } from "@/lib/ai/generateCards";
 import { generateCardImage } from "@/lib/ai/generateImage";
+import { generateCoverImage } from "@/lib/ai/generateCoverImage";
 import { getCityByName } from "@/lib/db-queries";
-import { createPlan, insertCards, updateCardImageUrl } from "@/lib/db-queries";
+import { createPlan, insertCards, updateCardImageUrl, updatePlanImageUrl } from "@/lib/db-queries";
 import type { GenerateCardsRequest, GeneratedCard, MoodProfile } from "@/lib/types";
 
 const DEMO_PLAYER = "00000000-0000-0000-0000-000000000001";
@@ -60,6 +61,9 @@ export async function POST(req: NextRequest) {
 
     const title = await (titlePromise ?? generatePlanTitle(body.city, body.moodProfile, numDays));
 
+    // Start cover image generation in parallel (non-blocking)
+    const coverPromise = generateCoverImage(title, body.city, body.moodProfile);
+
     // Flatten and annotate
     const cardsFlat = allCards.flatMap((result) =>
       result.cards.map((card) => ({
@@ -87,18 +91,24 @@ export async function POST(req: NextRequest) {
 
     const savedCards = await insertCards(plan!.id, cardsFlat, body.avgStageDurationMin);
 
-    // Generate images asynchronously — fire and forget so plan creation is not blocked
+    // Await cover image and save to plan
+    const imageUrl = await coverPromise;
+    if (imageUrl) {
+      await updatePlanImageUrl(plan!.id, imageUrl);
+    }
+
+    // Generate card images asynchronously — fire and forget so plan creation is not blocked
     if (process.env.FAL_KEY) {
       void Promise.allSettled(
         savedCards.map(async (card) => {
           try {
-            const imageUrl = await generateCardImage(
+            const cardImageUrl = await generateCardImage(
               card.title,
               card.description,
               card.moods,
               body.city
             );
-            await updateCardImageUrl(card.id, imageUrl);
+            await updateCardImageUrl(card.id, cardImageUrl);
           } catch (err) {
             console.error(`Failed to generate image for card ${card.id}:`, err);
           }
@@ -107,7 +117,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      plan: { ...plan, city_name: city.name, country: city.country },
+      plan: { ...plan, image_url: imageUrl, city_name: city.name, country: city.country },
       cards: savedCards,
       numDays,
     });

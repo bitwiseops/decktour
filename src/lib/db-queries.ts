@@ -108,6 +108,13 @@ export async function updatePlanDescription(id: string, description: string) {
   );
 }
 
+export async function updatePlanImageUrl(id: string, imageUrl: string) {
+  return queryOne<Plan>(
+    "UPDATE plans SET image_url = $2, updated_at = now() WHERE id = $1 RETURNING *",
+    [id, imageUrl]
+  );
+}
+
 // ── Cards ──
 
 export async function insertCards(
