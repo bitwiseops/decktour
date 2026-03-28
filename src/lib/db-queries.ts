@@ -208,20 +208,22 @@ export async function insertCheckIn(
   quizAnswers: number[],
   quizCorrect: number,
   quizTotal: number,
+  hintsRevealed: number,
   scoreEarned: number
 ) {
   return queryOne(
     `INSERT INTO checkins
        (session_id, card_id, player_id, player_location,
         distance_meters, location_valid, location_exact,
-        quiz_answers, quiz_correct, quiz_total, score_earned, voucher_unlocked)
+        quiz_answers, quiz_correct, quiz_total, hints_revealed,
+        score_earned, voucher_unlocked)
      VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($5, $4), 4326)::geography,
-        $6, $7, $8, $9, $10, $11, $12, $7)
+        $6, $7, $8, $9, $10, $11, $12, $13, $7)
      RETURNING *`,
     [
       sessionId, cardId, playerId, playerLat, playerLon,
       distanceMeters, locationValid, locationExact,
-      JSON.stringify(quizAnswers), quizCorrect, quizTotal, scoreEarned,
+      JSON.stringify(quizAnswers), quizCorrect, quizTotal, hintsRevealed, scoreEarned,
     ]
   );
 }

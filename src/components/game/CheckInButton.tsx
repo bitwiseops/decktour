@@ -4,18 +4,19 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapPin, Loader2, CheckCircle, XCircle } from "lucide-react";
 import { useGeolocation } from "@/hooks/useGeolocation";
-import { haversineDistance, CHECK_IN_RADIUS, EXACT_RADIUS } from "@/lib/scoring";
+import { haversineDistance, CHECK_IN_RADIUS, EXACT_RADIUS, calculateIntuitionBonus } from "@/lib/scoring";
 
 interface CheckInButtonProps {
   targetLat: number;
   targetLon: number;
   onCheckIn: (lat: number, lon: number, distance: number) => void;
   disabled?: boolean;
+  hintsRevealed?: number;
 }
 
 type CheckInState = "idle" | "loading" | "success" | "exact" | "far";
 
-export function CheckInButton({ targetLat, targetLon, onCheckIn, disabled }: CheckInButtonProps) {
+export function CheckInButton({ targetLat, targetLon, onCheckIn, disabled, hintsRevealed = 1 }: CheckInButtonProps) {
   const { getCurrentPosition } = useGeolocation();
   const [state, setState] = useState<CheckInState>("idle");
   const [distance, setDistance] = useState<number | null>(null);
@@ -75,7 +76,14 @@ export function CheckInButton({ targetLat, targetLon, onCheckIn, disabled }: Che
               </p>
             )}
             {state === "exact" && (
-              <p className="text-xs text-accent font-medium">+50 punti bonus!</p>
+              <>
+                <p className="text-xs text-accent font-medium">+50 punti bonus!</p>
+                {calculateIntuitionBonus(hintsRevealed, true) > 0 && (
+                  <p className="text-xs text-amber-400 font-medium">
+                    +{calculateIntuitionBonus(hintsRevealed, true)} Bonus Intuizione!
+                  </p>
+                )}
+              </>
             )}
           </motion.div>
         )}

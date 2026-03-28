@@ -142,6 +142,7 @@ CREATE TABLE checkins (
   quiz_answers JSONB DEFAULT '[]',
   quiz_correct INTEGER DEFAULT 0,
   quiz_total INTEGER DEFAULT 0,
+  hints_revealed SMALLINT DEFAULT 1 CHECK (hints_revealed BETWEEN 1 AND 3),
   photo_url TEXT,
   score_earned INTEGER DEFAULT 0,
   voucher_unlocked BOOLEAN DEFAULT FALSE,

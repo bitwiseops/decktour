@@ -1,20 +1,14 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Trophy, MapPin, Target, HelpCircle, Clock } from "lucide-react";
+import { Trophy, MapPin, Target, HelpCircle, Clock, Lightbulb } from "lucide-react";
+import type { ScoreBreakdown } from "@/lib/scoring";
 
-interface ScoreDisplayProps {
-  locationScore: number;
-  exactBonus: number;
-  quizScore: number;
-  timePenalty: number;
-  total: number;
-}
-
-export function ScoreDisplay({ locationScore, exactBonus, quizScore, timePenalty, total }: ScoreDisplayProps) {
+export function ScoreDisplay({ locationScore, exactBonus, intuitionBonus, quizScore, timePenalty, total }: ScoreBreakdown) {
   const items = [
     { icon: <MapPin size={16} />, label: "Check-in", score: locationScore, color: "text-primary-light", negative: false },
     { icon: <Target size={16} />, label: "Luogo esatto", score: exactBonus, color: "text-accent", negative: false },
+    { icon: <Lightbulb size={16} />, label: "Bonus Intuizione", score: intuitionBonus, color: "text-amber-400", negative: false },
     { icon: <HelpCircle size={16} />, label: "Quiz", score: quizScore, color: "text-success", negative: false },
     { icon: <Clock size={16} />, label: "Tempo scaduto", score: timePenalty, color: "text-danger", negative: true },
   ].filter((i) => i.score > 0);
