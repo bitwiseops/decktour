@@ -181,6 +181,9 @@ export function GameCard({ card, index = 0, hintLevel = "hard", onRevealHint }: 
               <div>
                 <p className="text-xs font-medium text-accent">Voucher</p>
                 <p className="text-xs text-foreground/60">{card.voucher_description}</p>
+                {card.voucher_partner && (
+                  <p className="text-xs text-foreground/40 mt-0.5">{card.voucher_partner}</p>
+                )}
               </div>
             </div>
           )}

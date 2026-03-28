@@ -111,6 +111,8 @@ CREATE TABLE cards (
   base_score INTEGER DEFAULT 100,
   voucher_description TEXT,
   voucher_partner TEXT,
+  voucher_code TEXT,
+  voucher_validity_radius INTEGER DEFAULT 500,
   is_temporary_event BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT now()
 );
