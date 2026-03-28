@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Clock, MapPin, HelpCircle, Gift, Sparkles } from "lucide-react";
-import { MOODS, RARITIES } from "@/lib/types";
+import { Clock, MapPin, HelpCircle, Gift, Sparkles, Zap } from "lucide-react";
+import { MOODS, RARITIES, RARITY_META } from "@/lib/types";
 import type { Card } from "@/lib/types";
 
 interface GameCardProps {
@@ -103,6 +103,14 @@ export function GameCard({ card, index = 0 }: GameCardProps) {
             <span className="flex items-center gap-1">
               <HelpCircle size={14} /> {card.mission_type === "quiz" ? "Quiz" : card.mission_type === "photo" ? "Foto" : "Quiz + Foto"}
             </span>
+            {card.power_level > 0 && (
+              <span
+                className="flex items-center gap-1 font-semibold"
+                style={{ color: RARITY_META[card.rarity ?? "common"].color }}
+              >
+                <Zap size={14} /> {card.power_level}
+              </span>
+            )}
           </div>
 
           {card.voucher_description && (

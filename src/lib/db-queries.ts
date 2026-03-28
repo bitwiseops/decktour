@@ -9,6 +9,7 @@ import type {
   GeneratedCard,
   CardRarity,
 } from "./types";
+import { RARITY_POWER } from "./types";
 
 // ── Profiles ──
 
@@ -108,10 +109,13 @@ export async function insertCards(
   let idx = 1;
 
   for (const c of cards) {
+    const rarity = c.rarity || "common";
+    const powerLevel = RARITY_POWER[rarity] ?? 1;
     placeholders.push(
       `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++},
         $${idx++}::mood_type[], ST_SetSRID(ST_MakePoint($${idx++}, $${idx++}), 4326)::geography,
-        $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}::card_rarity)`
+        $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++},
+        $${idx++}::card_rarity, $${idx++})`
     );
     values.push(
       planId,
@@ -128,14 +132,16 @@ export async function insertCards(
       c.suggested_voucher || null,
       null, // voucher_partner
       c.is_temporary_event,
-      c.rarity || "common"
+      rarity,
+      powerLevel
     );
   }
 
   return query<Card>(
     `INSERT INTO cards (plan_id, day_number, stage_order, title, description,
        moods, location, duration_min, quiz_data, location_hint,
-       voucher_description, voucher_partner, is_temporary_event, rarity)
+       voucher_description, voucher_partner, is_temporary_event,
+       rarity, power_level)
      VALUES ${placeholders.join(", ")}
      RETURNING *, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon`,
     values
