@@ -23,23 +23,27 @@ export const EXACT_RADIUS = 100; // meters
 export const EXACT_BONUS = 50;
 export const QUIZ_CORRECT_BONUS = 25;
 export const DEFAULT_BASE_SCORE = 100;
+export const TIME_EXPIRED_PENALTY = 25;
 
 export function calculateCheckInScore(
   distanceMeters: number,
   baseScore: number,
-  quizCorrect: number
-): { locationScore: number; exactBonus: number; quizScore: number; total: number } {
+  quizCorrect: number,
+  timerExpired: boolean = false,
+): { locationScore: number; exactBonus: number; quizScore: number; timePenalty: number; total: number } {
   const locationValid = distanceMeters <= CHECK_IN_RADIUS;
   const locationExact = distanceMeters <= EXACT_RADIUS;
 
   const locationScore = locationValid ? baseScore : 0;
   const exactBonus = locationExact ? EXACT_BONUS : 0;
   const quizScore = quizCorrect * QUIZ_CORRECT_BONUS;
+  const timePenalty = timerExpired ? TIME_EXPIRED_PENALTY : 0;
 
   return {
     locationScore,
     exactBonus,
     quizScore,
-    total: locationScore + exactBonus + quizScore,
+    timePenalty,
+    total: Math.max(0, locationScore + exactBonus + quizScore - timePenalty),
   };
 }

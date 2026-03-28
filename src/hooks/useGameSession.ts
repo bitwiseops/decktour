@@ -32,12 +32,12 @@ export function useGameSession(cards: Card[]) {
   }, []);
 
   const performCheckIn = useCallback(
-    (playerLat: number, playerLon: number, quizAnswers: number[], quizData: QuizQuestion[]) => {
+    (playerLat: number, playerLon: number, quizAnswers: number[], quizData: QuizQuestion[], timerExpired: boolean = false) => {
       if (!currentCard) return null;
 
       const distance = haversineDistance(playerLat, playerLon, currentCard.lat, currentCard.lon);
       const quizCorrect = quizAnswers.filter((a, i) => a === quizData[i]?.correctIndex).length;
-      const score = calculateCheckInScore(distance, currentCard.base_score, quizCorrect);
+      const score = calculateCheckInScore(distance, currentCard.base_score, quizCorrect, timerExpired);
 
       const checkIn: CheckIn = {
         id: crypto.randomUUID(),
