@@ -1,0 +1,51 @@
+dataDir: ~/.agent-orchestrator
+worktreeDir: ~/.worktrees
+port: 3100
+
+defaults:
+  runtime: tmux
+  agent: claude-code
+  workspace: worktree
+  notifiers: [desktop]
+
+projects:
+  decktour:
+    name: Deck Tour
+    repo: bitwiseops/decktour
+    path: ~/Projects/decktour
+    defaultBranch: main
+    sessionPrefix: dt
+
+    symlinks: [.env.local]
+
+    postCreate:
+      - "npm install"
+
+    agentRules: |
+      TypeScript strict, import alias @/ -> src/.
+      Tipi centralizzati in src/lib/types.ts.
+      Query DB via src/lib/db-queries.ts, mai query inline.
+      Chiamate AI via src/lib/ai/, mai dal client.
+      Solo Tailwind utility classes.
+      Usa conventional commits (feat:, fix:, chore:).
+      Esegui npm run build prima di creare la PR.
+
+reactions:
+  ci-failed:
+    auto: true
+    action: send-to-agent
+    retries: 2
+
+  changes-requested:
+    auto: true
+    action: send-to-agent
+    escalateAfter: 30m
+
+  approved-and-green:
+    auto: false
+    action: notify
+
+  agent-stuck:
+    threshold: 10m
+    action: notify
+    priority: urgent
