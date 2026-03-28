@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { MapPin, Star, Users, Search, Loader2, Zap } from "lucide-react";
+import { MapPin, Star, Users, Search, Loader2, Zap, Crown } from "lucide-react";
 
 interface PlanSummary {
   id: string;
@@ -15,6 +15,7 @@ interface PlanSummary {
   avg_rating: number;
   date_from: string;
   creator_name: string;
+  has_rare_cards: boolean;
 }
 
 export default function MarketplacePage() {
@@ -70,9 +71,20 @@ export default function MarketplacePage() {
             >
               <Link
                 href={`/plan/${plan.id}`}
-                className="block glass rounded-xl p-5 hover:border-primary/30 border border-glass-border transition-all"
+                className={`block glass rounded-xl p-5 transition-all ${
+                  plan.has_rare_cards
+                    ? "border-2 border-amber-500/60 shadow-[0_0_15px_rgba(245,158,11,0.25)] hover:border-amber-400/80"
+                    : "border border-glass-border hover:border-primary/30"
+                }`}
               >
-                <h3 className="font-semibold text-lg mb-2">{plan.title}</h3>
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-lg mb-2">{plan.title}</h3>
+                  {plan.has_rare_cards && (
+                    <span className="shrink-0 flex items-center gap-1 text-xs font-semibold text-amber-400 bg-amber-500/10 rounded-full px-2 py-0.5">
+                      <Crown size={12} /> Rare
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-4 text-sm text-foreground/50">
                   <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city_name}</span>
                   <span className="flex items-center gap-1"><Star size={14} /> {plan.avg_rating || "—"}</span>

@@ -80,7 +80,11 @@ export async function listPlans(status?: string) {
   return query(
     `SELECT p.*,
        c.name AS city_name, c.country,
-       pr.display_name AS creator_name
+       pr.display_name AS creator_name,
+       EXISTS (
+         SELECT 1 FROM cards ca
+         WHERE ca.plan_id = p.id AND ca.rarity IN ('rare', 'secret')
+       ) AS has_rare_cards
      FROM plans p
      JOIN cities c ON c.id = p.city_id
      JOIN profiles pr ON pr.id = p.creator_id
