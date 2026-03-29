@@ -4,15 +4,16 @@
 -- ============================================================
 
 -- 1. Disabilita RLS su tutte le tabelle (app usa connessione diretta con anon key)
-ALTER TABLE profiles    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE cities      DISABLE ROW LEVEL SECURITY;
-ALTER TABLE pois        DISABLE ROW LEVEL SECURITY;
-ALTER TABLE plans       DISABLE ROW LEVEL SECURITY;
-ALTER TABLE cards       DISABLE ROW LEVEL SECURITY;
-ALTER TABLE plan_cards  DISABLE ROW LEVEL SECURITY;
-ALTER TABLE game_sessions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE checkins    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE reviews     DISABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE player_profiles  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE cities           DISABLE ROW LEVEL SECURITY;
+ALTER TABLE pois             DISABLE ROW LEVEL SECURITY;
+ALTER TABLE plans            DISABLE ROW LEVEL SECURITY;
+ALTER TABLE cards            DISABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_cards       DISABLE ROW LEVEL SECURITY;
+ALTER TABLE game_sessions    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE checkins         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE reviews          DISABLE ROW LEVEL SECURITY;
 
 -- 2. Vista cards con lat/lon esposti (lato JS non può fare ST_Y nel SELECT)
 CREATE OR REPLACE VIEW cards_view AS

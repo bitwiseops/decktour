@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { MapPin, Plus, Trophy, Compass, Loader2, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -59,6 +60,41 @@ export default function HomePage() {
       }).sort((a, b) => b[1] - a[1])[0][0]
     : null;
 
+  const CARDS = [
+    {
+      href: "/plan/new",
+      label: "Nuovo Piano",
+      sub: "Pianifica il tuo prossimo viaggio",
+      icon: <Plus size={20} className="text-white" />,
+      accent: "from-primary/80",
+      photo: "https://images.unsplash.com/photo-1488085061387-422e29b40080?w=600&q=80",
+    },
+    {
+      href: "/marketplace",
+      label: "Esplora",
+      sub: "Gioca i piani della community",
+      icon: <MapPin size={20} className="text-white" />,
+      accent: "from-accent/80",
+      photo: "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=80",
+    },
+    {
+      href: "/leaderboard",
+      label: "Classifica",
+      sub: "Top giocatori e top piani",
+      icon: <Trophy size={20} className="text-white" />,
+      accent: "from-success/80",
+      photo: "https://images.unsplash.com/photo-1533294455009-a77b7557d2d1?w=600&q=80",
+    },
+    {
+      href: "/profile",
+      label: "Profilo",
+      sub: "Il tuo DNA da viaggiatore",
+      icon: <Compass size={20} className="text-white" />,
+      accent: "from-primary-light/80",
+      photo: "https://images.unsplash.com/photo-1539635278303-d4002c07eae3?w=600&q=80",
+    },
+  ];
+
   return (
     <div className="max-w-lg mx-auto px-4 py-8">
       {/* Header */}
@@ -75,49 +111,34 @@ export default function HomePage() {
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-3 mb-8">
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.05 }}>
-          <Link href="/plan/new"
-            className="glass rounded-2xl p-5 flex flex-col items-center gap-3 border border-primary/30 hover:border-primary/60 transition-all text-center">
-            <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
-              <Plus size={24} className="text-primary" />
-            </div>
-            <span className="font-semibold text-sm">Nuovo Piano</span>
-            <span className="text-xs text-foreground/40">Pianifica il tuo prossimo viaggio</span>
-          </Link>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}>
-          <Link href="/marketplace"
-            className="glass rounded-2xl p-5 flex flex-col items-center gap-3 border border-glass-border hover:border-accent/40 transition-all text-center">
-            <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
-              <MapPin size={24} className="text-accent" />
-            </div>
-            <span className="font-semibold text-sm">Esplora</span>
-            <span className="text-xs text-foreground/40">Gioca i piani della community</span>
-          </Link>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.15 }}>
-          <Link href="/leaderboard"
-            className="glass rounded-2xl p-5 flex flex-col items-center gap-3 border border-glass-border hover:border-success/40 transition-all text-center">
-            <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
-              <Trophy size={24} className="text-success" />
-            </div>
-            <span className="font-semibold text-sm">Classifica</span>
-            <span className="text-xs text-foreground/40">Top giocatori e top piani</span>
-          </Link>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2 }}>
-          <Link href="/profile"
-            className="glass rounded-2xl p-5 flex flex-col items-center gap-3 border border-glass-border hover:border-primary-light/40 transition-all text-center">
-            <div className="w-12 h-12 rounded-xl bg-primary-light/20 flex items-center justify-center">
-              <Compass size={24} className="text-primary-light" />
-            </div>
-            <span className="font-semibold text-sm">Profilo</span>
-            <span className="text-xs text-foreground/40">Il tuo DNA da viaggiatore</span>
-          </Link>
-        </motion.div>
+        {CARDS.map((card, i) => (
+          <motion.div
+            key={card.href}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.05 * (i + 1) }}
+          >
+            <Link href={card.href} className="relative rounded-2xl overflow-hidden block group h-44">
+              <Image
+                src={card.photo}
+                alt={card.label}
+                fill
+                sizes="(max-width: 640px) 50vw, 240px"
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              {/* gradient overlay */}
+              <div className={`absolute inset-0 bg-gradient-to-t ${card.accent} via-black/30 to-transparent opacity-90`} />
+              {/* content */}
+              <div className="absolute bottom-0 left-0 right-0 p-3.5">
+                <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-2 border border-white/20">
+                  {card.icon}
+                </div>
+                <p className="font-bold text-sm text-white leading-tight">{card.label}</p>
+                <p className="text-xs text-white/60 mt-0.5 leading-tight">{card.sub}</p>
+              </div>
+            </Link>
+          </motion.div>
+        ))}
       </div>
     </div>
   );
