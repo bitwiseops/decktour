@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     .limit(20);
 
   const result = (data ?? []).map((r, i) => {
-    const plan = r.plans as { title: string; cities: { name: string } | null } | null;
+    const plan = r.plans as unknown as { title: string; cities: { name: string } | null } | null;
     return {
       rank: i + 1,
       plan_id: r.plan_id,

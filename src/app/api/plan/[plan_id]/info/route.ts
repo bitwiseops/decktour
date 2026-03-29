@@ -14,8 +14,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plan
 
   if (!data) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
 
-  const city = data.cities as { name: string; cover_url: string | null } | null;
-  const creator = data.creator as { email: string } | null;
+  const city = data.cities as unknown as { name: string; cover_url: string | null } | null;
+  const creator = data.creator as unknown as { email: string } | null;
 
   return NextResponse.json({
     id: data.id,

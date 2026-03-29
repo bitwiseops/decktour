@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (gameSession.explorer_id !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const _plan = Array.isArray(gameSession.plans) ? gameSession.plans[0] : gameSession.plans;
-    const plan = _plan as { id: string; title: string; diary_blurred: string | null; creator_id: string; stop_duration: string } | null;
+    const plan = _plan as unknown as { id: string; title: string; diary_blurred: string | null; creator_id: string; stop_duration: string } | null;
 
     // Mark session complete
     await db.from("game_sessions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", session_id);
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const rows = (progressRows ?? []).map((r) => ({
       ...r,
-      cards: (Array.isArray(r.cards) ? r.cards[0] : r.cards) as { base_points: number; rarity: string; challenge_content: Record<string, unknown> } | null,
+      cards: (Array.isArray(r.cards) ? r.cards[0] : r.cards) as unknown as { base_points: number; rarity: string; challenge_content: Record<string, unknown> } | null,
     })) as Array<{
       id: string; card_id: string; status: string; points_earned: number;
       is_correct: boolean | null; navigator_hint_used: boolean; day_number: number; position: number;

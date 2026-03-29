@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (!progress) return NextResponse.json({ error: "Progress not found" }, { status: 404 });
-    const gameSession = progress.game_sessions as { explorer_id: string; current_card_index: number } | null;
+    const gameSession = progress.game_sessions as unknown as { explorer_id: string; current_card_index: number } | null;
     if (gameSession?.explorer_id !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     await db.from("session_card_progress").update({ status: "skipped", points_earned: 0 }).eq("id", progress_id);

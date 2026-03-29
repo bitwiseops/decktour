@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     if (!progress) return NextResponse.json({ error: "Progress not found" }, { status: 404 });
     const _gs = Array.isArray(progress.game_sessions) ? progress.game_sessions[0] : progress.game_sessions;
-    const gameSession = _gs as {
+    const gameSession = _gs as unknown as {
       explorer_id: string; total_score: number; current_card_index: number;
       plans: { stop_duration: string } | { stop_duration: string }[] | null;
     } | null;

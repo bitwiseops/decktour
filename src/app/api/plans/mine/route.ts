@@ -17,12 +17,9 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const plans = (data ?? []).map((p: {
-    id: string; title: string; valid_from: string | null; valid_until: string | null;
-    num_days: number; times_played: number; avg_rating: number; diary_blurred: string | null;
-    is_published: boolean;
-    cities: { name: string; cover_url: string | null } | null;
-  }) => ({
+  const plans = (data ?? []).map((p) => {
+    const cities = p.cities as unknown as { name: string; cover_url: string | null } | null;
+    return {
     id: p.id,
     title: p.title,
     valid_from: p.valid_from,
@@ -32,9 +29,9 @@ export async function GET(req: NextRequest) {
     avg_rating: p.avg_rating,
     diary_blurred: p.diary_blurred,
     is_published: p.is_published,
-    city_name: p.cities?.name ?? null,
-    cover_url: p.cities?.cover_url ?? null,
-  }));
+    city_name: cities?.name ?? null,
+    cover_url: cities?.cover_url ?? null,
+  }; });
 
   return NextResponse.json(plans);
 }

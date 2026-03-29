@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   if (!progress) return NextResponse.json({ error: "Progress not found" }, { status: 404 });
-  const gameSession = progress.game_sessions as { explorer_id: string; plans: { stop_duration: string } | null } | null;
+  const gameSession = progress.game_sessions as unknown as { explorer_id: string; plans: { stop_duration: string } | null } | null;
   if (gameSession?.explorer_id !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { data: card } = await db

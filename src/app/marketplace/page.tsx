@@ -24,7 +24,7 @@ async function getPlans(cityId?: string, mood?: string): Promise<PlanCard[]> {
   if (cityId) query = query.eq("city_id", cityId);
 
   const { data } = await query;
-  const results = (data ?? []) as Array<{
+  const results = (data ?? []) as unknown as Array<{
     id: string; title: string; diary_blurred: string | null; avg_rating: number;
     times_played: number; valid_from: string | null; valid_until: string | null;
     moods_summary: Record<string, number> | null;

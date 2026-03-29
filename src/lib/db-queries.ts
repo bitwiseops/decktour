@@ -235,7 +235,7 @@ export async function getCardsByPlan(planId: string, token?: string) {
   type RawCard = Record<string, unknown>;
   type RawRow = { day_number: number; stage_order: number; cards: RawCard | null };
 
-  return (data as RawRow[]).flatMap((row) => {
+  return (data as unknown as RawRow[]).flatMap((row) => {
     const c = row.cards;
     if (!c) return [];
     const ch = (c.challenge_content as Record<string, unknown>) ?? {};

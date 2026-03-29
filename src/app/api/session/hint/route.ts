@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (!progress) return NextResponse.json({ error: "Progress not found" }, { status: 404 });
-    const session = progress.game_sessions as { explorer_id: string } | null;
+    const session = progress.game_sessions as unknown as { explorer_id: string } | null;
     if (session?.explorer_id !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Mark hint used
