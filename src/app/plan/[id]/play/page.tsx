@@ -13,6 +13,7 @@ import { VoucherCard } from "@/components/game/VoucherCard";
 import { HistoricalInfo } from "@/components/game/HistoricalInfo";
 import { GameMap } from "@/components/map/GameMap";
 import { useGeolocation } from "@/hooks/useGeolocation";
+import { supabase } from "@/lib/supabase";
 import { calculateCheckInScore, CHECK_IN_RADIUS } from "@/lib/scoring";
 import type { ScoreBreakdown } from "@/lib/scoring";
 import type { Card } from "@/lib/types";
@@ -57,22 +58,29 @@ export default function PlayPage() {
   const totalScoreRef = useRef(0);
 
   useEffect(() => {
-    // Avvia la sessione e recupera le carte
-    fetch(`/api/plans/${params.id}/play`, { method: "POST" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.cards?.length) setCards(data.cards);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = {};
+      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
 
-    // Carica il diario del piano per il reveal finale
-    fetch(`/api/plans/${params.id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.description) setPlanDiary(data.description);
-      })
-      .catch(() => {});
+      // Avvia la sessione e recupera le carte
+      fetch(`/api/plans/${params.id}/play`, { method: "POST", headers: authHeaders })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.cards?.length) setCards(data.cards);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+
+      // Carica il diario del piano per il reveal finale
+      fetch(`/api/plans/${params.id}`, { headers: authHeaders })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.description) setPlanDiary(data.description);
+        })
+        .catch(() => {});
+    }
+    init();
   }, [params.id]);
 
   const currentCard = cards[currentIndex] ?? null;

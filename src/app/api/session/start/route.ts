@@ -43,33 +43,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Could not create game session" }, { status: 500 });
     }
 
-    // Fetch all plan_days for this plan, then fetch plan_day_cards
-    const { data: planDays } = await db
-      .from("plan_days")
-      .select("id,day_number")
+    // Fetch cards via plan_cards (flat, no plan_days indirection)
+    const { data: planCards, error: pcErr } = await db
+      .from("plan_cards")
+      .select("card_id, day_number, stage_order")
       .eq("plan_id", plan_id)
-      .order("day_number");
+      .order("day_number")
+      .order("stage_order");
 
-    if (!planDays || planDays.length === 0) {
-      return NextResponse.json({ error: "Plan has no days" }, { status: 400 });
-    }
-
-    const planDayIds = planDays.map((d) => d.id);
-    const dayMap: Record<string, number> = Object.fromEntries(planDays.map((d) => [d.id, d.day_number]));
-
-    const { data: planDayCards } = await db
-      .from("plan_day_cards")
-      .select("card_id, position, plan_day_id")
-      .in("plan_day_id", planDayIds)
-      .order("position");
-
-    const allCards = (planDayCards ?? [])
-      .map((pdc) => ({ card_id: pdc.card_id, position: pdc.position, day_number: dayMap[pdc.plan_day_id] ?? 1 }))
-      .sort((a, b) => a.day_number !== b.day_number ? a.day_number - b.day_number : a.position - b.position);
-
-    if (allCards.length === 0) {
+    if (pcErr || !planCards || planCards.length === 0) {
       return NextResponse.json({ error: "Plan has no cards" }, { status: 400 });
     }
+
+    const allCards = planCards.map((pc) => ({
+      card_id: pc.card_id,
+      day_number: pc.day_number,
+      position: pc.stage_order,
+    }));
 
     // Insert session_card_progress for each card
     const progressInserts = allCards.map((pdc) => ({

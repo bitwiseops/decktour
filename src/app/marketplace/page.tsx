@@ -64,7 +64,8 @@ interface Props {
 
 export default async function MarketplacePage({ searchParams }: Props) {
   const params = await searchParams;
-  const isMine = params.mine === "1";
+  // Default to "my plans" view; switch to all plans only when mine=0 is explicit
+  const isMine = params.mine !== "0";
 
   const [plans, cities] = await Promise.all([
     isMine ? Promise.resolve([]) : getPlans(params.city_id, params.mood),

@@ -29,15 +29,12 @@ function FiltersInner({ cities, currentCity, currentMood, mine }: {
   }
 
   function toggleMine() {
-    if (mine) {
-      // Go back to all plans, preserving other filters
-      const params = new URLSearchParams();
-      if (currentCity) params.set("city_id", currentCity);
-      if (currentMood) params.set("mood", currentMood);
-      router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
-    } else {
-      router.push(`${pathname}?mine=1`);
-    }
+    const params = new URLSearchParams();
+    if (currentCity) params.set("city_id", currentCity);
+    if (currentMood) params.set("mood", currentMood);
+    // mine=0 → explore all; default (no param) → my plans
+    if (mine) params.set("mine", "0");
+    router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
   }
 
   return (
@@ -49,30 +46,26 @@ function FiltersInner({ cities, currentCity, currentMood, mine }: {
         👤 I miei piani
       </button>
 
-      {!mine && (
-        <>
-          <select
-            value={currentCity ?? ""}
-            onChange={(e) => update("city_id", e.target.value)}
-            className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
-          >
-            <option value="">Tutte le città</option>
-            {cities.map((c) => (
-              <option key={c.id} value={c.id} className="bg-[#1e1b32]">{c.name}</option>
-            ))}
-          </select>
+      <select
+        value={currentCity ?? ""}
+        onChange={(e) => update("city_id", e.target.value)}
+        className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
+      >
+        <option value="">Tutte le città</option>
+        {cities.map((c) => (
+          <option key={c.id} value={c.id} className="bg-[#1e1b32]">{c.name}</option>
+        ))}
+      </select>
 
-          <select
-            value={currentMood ?? ""}
-            onChange={(e) => update("mood", e.target.value)}
-            className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
-          >
-            {MOODS.map((m) => (
-              <option key={m.value} value={m.value} className="bg-[#1e1b32]">{m.label}</option>
-            ))}
-          </select>
-        </>
-      )}
+      <select
+        value={currentMood ?? ""}
+        onChange={(e) => update("mood", e.target.value)}
+        className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
+      >
+        {MOODS.map((m) => (
+          <option key={m.value} value={m.value} className="bg-[#1e1b32]">{m.label}</option>
+        ))}
+      </select>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import type {
   QuizQuestion,
   GeneratedCard,
   CardRarity,
+  MissionType,
 } from "./types";
 import { RARITY_POWER } from "./types";
 
@@ -117,25 +118,19 @@ export async function getPlan(id: string, token?: string) {
 export async function listPlans(status?: string) {
   let q = supabase
     .from("plans")
-    .select(
-      "*, cities:city_id(name, country), plan_cards(cards(rarity))"
-    )
+    .select("*, cities:city_id(name, country)")
     .order("created_at", { ascending: false });
   if (status) q = q.eq("status", status as never);
   const { data } = await q;
   return (data ?? []).map((d: Record<string, unknown> & {
     cities?: { name: string; country: string } | null;
-    plan_cards?: Array<{ cards: { rarity: string } | null }> | null;
   }) => ({
     ...d,
     city_name: d.cities?.name ?? null,
     country: d.cities?.country ?? null,
     creator_name: null,
-    has_rare_cards: (d.plan_cards ?? []).some(
-      (pc) => pc.cards?.rarity === "rare" || pc.cards?.rarity === "secret"
-    ),
+    has_rare_cards: false,
     cities: undefined,
-    plan_cards: undefined,
   }));
 }
 
@@ -208,7 +203,7 @@ export async function insertCards(
     .select("id");
 
   // Crea le associazioni plan_cards
-  const planCardRows = (insertedCards ?? []).map((card: { id: string }, i) => ({
+  const planCardRows = (insertedCards ?? []).map((card: { id: string }, i: number) => ({
     plan_id: planId,
     card_id: card.id,
     day_number: cards[i].day_number,
@@ -216,31 +211,72 @@ export async function insertCards(
   }));
   await supabase.from("plan_cards").insert(planCardRows as never[]);
 
-  // Rilegge da plan_cards_view per ottenere lat/lon calcolati e ordinamento
-  const { data } = await supabase
-    .from("plan_cards_view")
-    .select("*")
-    .eq("plan_id", planId)
-    .order("day_number")
-    .order("stage_order");
-  return (data ?? []) as unknown as (Card & { lat: number; lon: number })[];
+  // Rilegge via getCardsByPlan
+  return getCardsByPlan(planId);
 }
 
 export async function updateCardImageUrl(cardId: string, imageUrl: string) {
   await supabase.from("cards").update({ image_url: imageUrl }).eq("id", cardId);
-  const { data } = await supabase.from("cards_view").select("*").eq("id", cardId).single();
-  return data as unknown as Card & { lat: number; lon: number };
 }
 
 export async function getCardsByPlan(planId: string, token?: string) {
   const db = token ? getAuthedSupabase(token) : supabase;
+
+  // Join plan_cards → cards (old DB schema)
   const { data } = await db
-    .from("plan_cards_view")
-    .select("*")
+    .from("plan_cards")
+    .select("day_number, stage_order, cards(*)")
     .eq("plan_id", planId)
     .order("day_number")
     .order("stage_order");
-  return (data ?? []) as unknown as (Card & { lat: number; lon: number })[];
+
+  if (!data || data.length === 0) return [] as (Card & { lat: number; lon: number })[];
+
+  type RawCard = Record<string, unknown>;
+  type RawRow = { day_number: number; stage_order: number; cards: RawCard | null };
+
+  return (data as RawRow[]).flatMap((row) => {
+    const c = row.cards;
+    if (!c) return [];
+    const ch = (c.challenge_content as Record<string, unknown>) ?? {};
+    const rarity = (c.rarity as CardRarity) ?? "common";
+    const card: Card & { lat: number; lon: number } = {
+      id: c.id as string,
+      city_id: c.city_id as string,
+      poi_id: null,
+      day_number: row.day_number,
+      stage_order: row.stage_order,
+      title: c.title as string,
+      description: (c.story as string) ?? "",
+      moods: (c.mood_tags as MoodType[]) ?? [],
+      image_url: (c.photo_url as string | null) ?? null,
+      lat: c.lat as number,
+      lon: c.lon as number,
+      duration_min: 60,
+      mission_type: "quiz" as MissionType,
+      quiz_data: ch.question
+        ? [{
+            question: ch.question as string,
+            options: (ch.options as string[]) ?? [],
+            correctIndex: (ch.correct_index as number) ?? 0,
+            explanation: (ch.fun_fact as string) ?? "",
+          } as QuizQuestion]
+        : [],
+      hint_hard: (ch.clue_primary as string) ?? "",
+      hint_medium: (ch.clue_extra as string) ?? "",
+      hint_easy: (ch.location_name as string) ?? "",
+      historical_info: "",
+      rarity,
+      power_level: RARITY_POWER[rarity] ?? 1,
+      base_score: (c.base_points as number) ?? 100,
+      voucher_description: (c.voucher_text as string | null) ?? null,
+      voucher_partner: null,
+      voucher_code: null,
+      voucher_validity_radius: 0,
+      is_temporary_event: (c.is_temporary as boolean) ?? false,
+    };
+    return [card];
+  });
 }
 
 // ── Game Sessions ──
