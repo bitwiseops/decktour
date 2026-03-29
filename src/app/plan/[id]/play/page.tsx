@@ -3,30 +3,34 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Trophy, Loader2, Eye, Star, BookOpen, Zap } from "lucide-react";
-import { GameCard } from "@/components/game/GameCard";
+import { ChevronRight, Trophy, Loader2, Star, BookOpen, Zap, MapPin, Map } from "lucide-react";
 import { CheckInButton } from "@/components/game/CheckInButton";
 import { CountdownTimer } from "@/components/game/CountdownTimer";
 import { QuizModal } from "@/components/game/QuizModal";
 import { ScoreDisplay } from "@/components/game/ScoreDisplay";
 import { VoucherCard } from "@/components/game/VoucherCard";
-import { HistoricalInfo } from "@/components/game/HistoricalInfo";
-import { GameMap } from "@/components/map/GameMap";
+import { MapPinModal } from "@/components/game/MapPinModal";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { supabase } from "@/lib/supabase";
+import { MOODS, RARITIES } from "@/lib/types";
 import { calculateCheckInScore, CHECK_IN_RADIUS } from "@/lib/scoring";
 import type { ScoreBreakdown } from "@/lib/scoring";
 import type { Card } from "@/lib/types";
-import type { HintLevel } from "@/components/game/GameCard";
+
+type HintLevel = "hard" | "medium" | "easy";
 
 type PlayPhase = "hint" | "checkin" | "quiz" | "score" | "complete";
 
 const HINT_PROGRESSION: HintLevel[] = ["hard", "medium", "easy"];
+const HINT_LABELS: Record<HintLevel, string> = {
+  hard: "Indizio criptico",
+  medium: "Indizio medio",
+  easy: "Indizio facile",
+};
 const AUTO_ADVANCE_DELAY_MS = 4000;
+const MAX_SCORE_PER_CARD = 325;
 
-function hintStepToRevealed(step: number): number {
-  return step + 1;
-}
+function hintStepToRevealed(step: number) { return step + 1; }
 
 function getPerformanceLabel(score: number, maxScore: number): { label: string; stars: number; color: string } {
   const pct = maxScore > 0 ? score / maxScore : 0;
@@ -35,13 +39,73 @@ function getPerformanceLabel(score: number, maxScore: number): { label: string; 
   return { label: "Viaggiatore", stars: 1, color: "text-foreground/60" };
 }
 
-// Punteggio massimo teorico per carta: 100 base + 50 exact + 100 intuition + 75 quiz (3 domande)
-const MAX_SCORE_PER_CARD = 325;
+// ── HintCard ──────────────────────────────────────────────────────────────────
+function HintCard({ card, hintLevel }: { card: Card; hintLevel: HintLevel }) {
+  const rarityInfo = RARITIES.find((r) => r.id === card.rarity) ?? RARITIES[0];
 
+  const visibleHints: { label: string; text: string }[] = [
+    { label: HINT_LABELS.hard, text: card.hint_hard },
+    ...(hintLevel === "medium" || hintLevel === "easy"
+      ? [{ label: HINT_LABELS.medium, text: card.hint_medium }]
+      : []),
+    ...(hintLevel === "easy" ? [{ label: HINT_LABELS.easy, text: card.hint_easy }] : []),
+  ];
+
+  return (
+    <div className="glass rounded-2xl overflow-hidden border" style={{ borderColor: `${rarityInfo.color}40` }}>
+      {card.image_url && (
+        <div className="relative w-full h-40 overflow-hidden">
+          <img src={card.image_url} alt={card.title} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+        </div>
+      )}
+      <div className="p-5 flex flex-col gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            {card.rarity !== "common" && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ backgroundColor: `${rarityInfo.color}20`, color: rarityInfo.color }}>
+                {rarityInfo.label}
+              </span>
+            )}
+          </div>
+          <h2 className="text-xl font-bold text-white">{card.title}</h2>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {card.moods.map((moodId) => {
+              const mood = MOODS.find((m) => m.id === moodId);
+              return mood ? (
+                <span key={moodId} className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: `${mood.color}20`, color: mood.color }}>
+                  {mood.emoji} {mood.label.split("&")[0].trim()}
+                </span>
+              ) : null;
+            })}
+          </div>
+        </div>
+        <div className="flex flex-col gap-3">
+          {visibleHints.map((hint, i) => (
+            <motion.div key={hint.label}
+              initial={i > 0 ? { opacity: 0, y: 6 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
+              <MapPin size={16} className="text-accent mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-accent/70 mb-0.5">{hint.label}</p>
+                <p className="text-sm text-foreground/80 italic">&ldquo;{hint.text}&rdquo;</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PlayPage ──────────────────────────────────────────────────────────────────
 export default function PlayPage() {
   const params = useParams();
   const router = useRouter();
-  const { position } = useGeolocation(true);
+  useGeolocation(true); // keep GPS warm for CheckInButton
   const [cards, setCards] = useState<Card[]>([]);
   const [planDiary, setPlanDiary] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,8 +117,8 @@ export default function PlayPage() {
   const [timerExpired, setTimerExpired] = useState(false);
   const [hintStep, setHintStep] = useState(0);
   const [voucherUnlocked, setVoucherUnlocked] = useState(false);
+  const [showMapPin, setShowMapPin] = useState(false);
   const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // track final score to avoid stale closure in complete phase
   const totalScoreRef = useRef(0);
 
   useEffect(() => {
@@ -123,9 +187,10 @@ export default function PlayPage() {
 
   const handleCheckIn = (_lat: number, _lon: number, distance: number) => {
     if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+    setShowMapPin(false);
     setLastDistance(distance);
     if (currentCard?.quiz_data?.length) {
-      setTimeout(() => setPhase("quiz"), 1500);
+      setTimeout(() => setPhase("quiz"), 500);
     } else {
       // Nessun quiz: passa direttamente al punteggio
       const score = calculateCheckInScore(distance, currentCard?.base_score ?? 100, 0, timerExpired, hintStepToRevealed(hintStep));

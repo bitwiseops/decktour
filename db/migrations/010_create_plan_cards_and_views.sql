@@ -20,6 +20,36 @@ CREATE INDEX IF NOT EXISTS plan_cards_plan_id_idx ON public.plan_cards(plan_id);
 -- Grant access
 GRANT SELECT, INSERT, DELETE ON public.plan_cards TO anon, authenticated;
 
+-- Enable RLS
+ALTER TABLE public.plan_cards ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read plan_cards (needed for play page without auth)
+CREATE POLICY "plan_cards_select_all"
+  ON public.plan_cards FOR SELECT
+  USING (true);
+
+-- Only the plan creator can insert cards for their plan
+CREATE POLICY "plan_cards_insert_own"
+  ON public.plan_cards FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.plans
+      WHERE plans.id = plan_id
+        AND plans.creator_id = auth.uid()
+    )
+  );
+
+-- Only the plan creator can delete cards from their plan
+CREATE POLICY "plan_cards_delete_own"
+  ON public.plan_cards FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.plans
+      WHERE plans.id = plan_id
+        AND plans.creator_id = auth.uid()
+    )
+  );
+
 -- ── 2. cards_view  ───────────────────────────────────────────────────────────
 -- Maps the OLD cards schema to the column names expected by the application.
 CREATE OR REPLACE VIEW public.cards_view AS

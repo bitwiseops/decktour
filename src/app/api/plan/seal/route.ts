@@ -99,14 +99,17 @@ Rispondi SOLO con il JSON. Formato: {"title":"...","diary_blurred":"..."}
       return NextResponse.json({ error: "Failed to save plan", detail: planErr?.message }, { status: 500 });
     }
 
-    // Insert plan_cards with day_number and stage_order
-    for (const pick of picks) {
-      await authedDb.from("plan_cards").insert({
-        plan_id: plan.id,
-        card_id: pick.card_id,
-        day_number: pick.day_number,
-        stage_order: pick.position,
-      });
+    // Insert plan_cards — bulk insert
+    const planCardRows = picks.map((pick) => ({
+      plan_id: plan.id,
+      card_id: pick.card_id,
+      day_number: pick.day_number,
+      stage_order: pick.position,
+    }));
+    const { error: pcErr } = await authedDb.from("plan_cards").insert(planCardRows as never[]);
+    if (pcErr) {
+      console.error("plan_cards insert error:", pcErr);
+      return NextResponse.json({ error: "Failed to save plan cards", detail: pcErr.message }, { status: 500 });
     }
 
     // Delete planning session
