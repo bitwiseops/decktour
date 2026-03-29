@@ -14,8 +14,8 @@ const MOODS = [
 
 interface City { id: string; name: string; }
 
-function FiltersInner({ cities, currentCity, currentMood }: {
-  cities: City[]; currentCity?: string; currentMood?: string;
+function FiltersInner({ cities, currentCity, currentMood, mine }: {
+  cities: City[]; currentCity?: string; currentMood?: string; mine?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -28,33 +28,56 @@ function FiltersInner({ cities, currentCity, currentMood }: {
     router.push(`${pathname}?${params.toString()}`);
   }
 
+  function toggleMine() {
+    if (mine) {
+      // Go back to all plans, preserving other filters
+      const params = new URLSearchParams();
+      if (currentCity) params.set("city_id", currentCity);
+      if (currentMood) params.set("mood", currentMood);
+      router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+    } else {
+      router.push(`${pathname}?mine=1`);
+    }
+  }
+
   return (
     <div className="flex gap-2 flex-wrap mb-6">
-      <select
-        value={currentCity ?? ""}
-        onChange={(e) => update("city_id", e.target.value)}
-        className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
+      <button
+        onClick={toggleMine}
+        className={`rounded-xl px-3 py-2 text-sm font-medium border transition-colors ${mine ? "bg-primary text-white border-primary" : "glass text-foreground border-glass-border hover:border-primary/40"}`}
       >
-        <option value="">Tutte le città</option>
-        {cities.map((c) => (
-          <option key={c.id} value={c.id} className="bg-[#1e1b32]">{c.name}</option>
-        ))}
-      </select>
+        👤 I miei piani
+      </button>
 
-      <select
-        value={currentMood ?? ""}
-        onChange={(e) => update("mood", e.target.value)}
-        className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
-      >
-        {MOODS.map((m) => (
-          <option key={m.value} value={m.value} className="bg-[#1e1b32]">{m.label}</option>
-        ))}
-      </select>
+      {!mine && (
+        <>
+          <select
+            value={currentCity ?? ""}
+            onChange={(e) => update("city_id", e.target.value)}
+            className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
+          >
+            <option value="">Tutte le città</option>
+            {cities.map((c) => (
+              <option key={c.id} value={c.id} className="bg-[#1e1b32]">{c.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={currentMood ?? ""}
+            onChange={(e) => update("mood", e.target.value)}
+            className="glass rounded-xl px-3 py-2 text-sm text-foreground outline-none border border-glass-border"
+          >
+            {MOODS.map((m) => (
+              <option key={m.value} value={m.value} className="bg-[#1e1b32]">{m.label}</option>
+            ))}
+          </select>
+        </>
+      )}
     </div>
   );
 }
 
-export default function MarketplaceFilters(props: { cities: City[]; currentCity?: string; currentMood?: string }) {
+export default function MarketplaceFilters(props: { cities: City[]; currentCity?: string; currentMood?: string; mine?: boolean }) {
   return (
     <Suspense fallback={<div className="h-12 mb-6" />}>
       <FiltersInner {...props} />

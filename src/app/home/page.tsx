@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { MapPin, Plus, Trophy, Compass, Loader2, LogOut } from "lucide-react";
+import { MapPin, Plus, Trophy, Compass, Loader2, LogOut, Play, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 interface PlayerProfile {
@@ -16,11 +16,21 @@ interface PlayerProfile {
   mood_nightlife: number;
 }
 
+interface MyPlan {
+  id: string;
+  title: string;
+  city_name: string | null;
+  valid_from: string | null;
+  num_days: number;
+  times_played: number;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [myPlans, setMyPlans] = useState<MyPlan[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -36,6 +46,12 @@ export default function HomePage() {
 
       if (!pp) { router.replace("/onboarding"); return; }
       setProfile(pp);
+
+      const plansRes = await fetch("/api/plans/mine", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (plansRes.ok) setMyPlans(await plansRes.json());
+
       setLoading(false);
     }
     load();
@@ -140,6 +156,39 @@ export default function HomePage() {
           </motion.div>
         ))}
       </div>
+
+      {/* I miei piani */}
+      {myPlans.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-bold">I miei piani</h2>
+            <Link href="/marketplace?tab=mine" className="text-xs text-primary/70 flex items-center gap-1">
+              Vedi tutti <ChevronRight size={12} />
+            </Link>
+          </div>
+          <div className="flex flex-col gap-2">
+            {myPlans.slice(0, 3).map((plan) => (
+              <Link
+                key={plan.id}
+                href={`/plan/${plan.id}`}
+                className="glass rounded-xl px-4 py-3 flex items-center gap-3 hover:border-primary/30 transition-colors border border-transparent"
+              >
+                <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+                  <Play size={14} className="text-primary ml-0.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{plan.title}</p>
+                  <p className="text-xs text-foreground/40 truncate">
+                    {plan.city_name && <span className="flex items-center gap-1 inline-flex"><MapPin size={10} /> {plan.city_name}</span>}
+                    {plan.valid_from && <span> · {new Date(plan.valid_from).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}</span>}
+                  </p>
+                </div>
+                <ChevronRight size={14} className="text-foreground/30 shrink-0" />
+              </Link>
+            ))}
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }

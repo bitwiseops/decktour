@@ -2,6 +2,7 @@
 import { Star, Users, MapPin } from "lucide-react";
 import { getServerSupabase } from "@/lib/supabase";
 import MarketplaceFilters from "./MarketplaceFilters";
+import MyPlansSection from "./MyPlansSection";
 
 interface PlanCard {
   id: string; title: string; diary_blurred: string | null; avg_rating: number;
@@ -58,13 +59,15 @@ async function getCities() {
 }
 
 interface Props {
-  searchParams: Promise<{ city_id?: string; mood?: string }>;
+  searchParams: Promise<{ city_id?: string; mood?: string; mine?: string }>;
 }
 
 export default async function MarketplacePage({ searchParams }: Props) {
   const params = await searchParams;
+  const isMine = params.mine === "1";
+
   const [plans, cities] = await Promise.all([
-    getPlans(params.city_id, params.mood),
+    isMine ? Promise.resolve([]) : getPlans(params.city_id, params.mood),
     getCities(),
   ]);
 
@@ -75,9 +78,11 @@ export default async function MarketplacePage({ searchParams }: Props) {
         <p className="text-foreground/50 text-sm">Scopri viaggi creati dalla community. Nessun login richiesto per esplorare.</p>
       </div>
 
-      <MarketplaceFilters cities={cities} currentCity={params.city_id} currentMood={params.mood} />
+      <MarketplaceFilters cities={cities} currentCity={params.city_id} currentMood={params.mood} mine={isMine} />
 
-      {plans.length === 0 ? (
+      {isMine ? (
+        <MyPlansSection />
+      ) : plans.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-foreground/40 text-lg mb-2">Nessun piano trovato</p>
           <Link href="/plan/new" className="text-primary font-medium">Crea il primo →</Link>

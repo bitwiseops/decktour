@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, BookOpen, ImageIcon } from "lucide-react";
+import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, ImageIcon } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
 import { supabase } from "@/lib/supabase";
 import type { Card } from "@/lib/types";
@@ -18,8 +18,10 @@ interface PlanData {
   date_from: string;
   date_to: string;
   num_stages: number;
+  stops_per_day?: number;
   power_level: number;
   status: string;
+  moods_summary?: Record<string, number> | null;
 }
 
 export default function PlanDetailPage() {
@@ -28,6 +30,7 @@ export default function PlanDetailPage() {
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generatingCover, setGeneratingCover] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -40,7 +43,33 @@ export default function PlanDetailPage() {
       ])
         .then(([planData, cardsData]) => {
           setPlan(planData);
-          setCards(cardsData);
+          setCards(Array.isArray(cardsData) ? cardsData : []);
+
+          // Auto-generate cover if missing
+          if (planData?.id && !planData.image_url && session?.access_token) {
+            setGeneratingCover(true);
+            const moodProfile = planData.moods_summary ?? {
+              shopping: 50, food: 50, art: 50, nature: 50, nightlife: 50,
+            };
+            fetch("/api/ai/cover", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+              body: JSON.stringify({
+                planId: planData.id,
+                title: planData.title,
+                city: planData.city_name ?? "",
+                moodProfile,
+              }),
+            })
+              .then((r) => r.json())
+              .then((coverData) => {
+                if (coverData?.image_url) {
+                  setPlan((prev) => prev ? { ...prev, image_url: coverData.image_url } : prev);
+                }
+              })
+              .catch(() => {})
+              .finally(() => setGeneratingCover(false));
+          }
         })
         .catch(() => {})
         .finally(() => setLoading(false));
@@ -74,6 +103,10 @@ export default function PlanDetailPage() {
 
   const numDays = Object.keys(cardsByDay).length;
 
+  // Fallback to plan metadata when cards haven't loaded yet
+  const displayDays = numDays > 0 ? numDays : plan.num_stages;
+  const displayCards = cards.length > 0 ? cards.length : plan.num_stages * (plan.stops_per_day ?? 1);
+
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
       {/* Header */}
@@ -91,7 +124,10 @@ export default function PlanDetailPage() {
             </div>
           ) : (
             <div className="relative w-full aspect-video bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-              <ImageIcon size={48} className="text-foreground/20" />
+              {generatingCover
+                ? <Loader2 size={32} className="text-primary/50 animate-spin" />
+                : <ImageIcon size={48} className="text-foreground/20" />
+              }
             </div>
           )}
           <div className="p-6">
@@ -101,8 +137,8 @@ export default function PlanDetailPage() {
             <div className="flex flex-wrap gap-3 text-sm text-foreground/50">
               <span className="flex items-center gap-1"><MapPin size={14} /> {plan.city_name}</span>
               <span className="flex items-center gap-1"><Calendar size={14} /> {plan.date_from} → {plan.date_to}</span>
-              <span className="flex items-center gap-1"><Clock size={14} /> {numDays} giorni</span>
-              <span className="flex items-center gap-1"><Star size={14} /> {cards.length} carte</span>
+              <span className="flex items-center gap-1"><Clock size={14} /> {displayDays} giorni</span>
+              <span className="flex items-center gap-1"><Star size={14} /> {displayCards} carte</span>
               {plan.power_level > 0 && (
                 <span className="flex items-center gap-1 text-amber-400 font-semibold"><Zap size={14} /> {plan.power_level}</span>
               )}
@@ -110,26 +146,6 @@ export default function PlanDetailPage() {
           </div>
         </div>
       </motion.div>
-
-      {/* Diary */}
-      {plan.description && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="mb-8"
-        >
-          <div className="glass rounded-xl p-5">
-            <div className="flex items-center gap-2 text-sm text-foreground/40 mb-3">
-              <BookOpen size={14} />
-              <span>Diario del Futuro</span>
-            </div>
-            <p className="text-foreground/80 leading-relaxed italic text-sm">
-              &ldquo;{plan.description}&rdquo;
-            </p>
-          </div>
-        </motion.div>
-      )}
 
       {/* Cards by day */}
       {Object.entries(cardsByDay)

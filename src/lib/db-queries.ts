@@ -85,15 +85,15 @@ export async function createPlan(
 
 export async function getPlan(id: string, token?: string) {
   const db = token ? getAuthedSupabase(token) : supabase;
-  const { data } = await db
+  const { data, error } = await db
     .from("plans")
-    .select("*, cities:city_id(name, country), profiles:creator_id(display_name)")
+    .select("*, cities:city_id(name, country)")
     .eq("id", id)
     .single();
+  if (error) console.error("getPlan error:", error.message);
   if (!data) return null;
   const d = data as Record<string, unknown> & {
     cities?: { name: string; country: string } | null;
-    profiles?: { display_name: string } | null;
   };
   return {
     ...d,
@@ -101,9 +101,16 @@ export async function getPlan(id: string, token?: string) {
     country: d.cities?.country ?? null,
     city_lat: null,
     city_lon: null,
-    creator_name: d.profiles?.display_name ?? null,
+    creator_name: null,
+    // Normalize: handle both old schema (date_from/to, description, num_stages, status)
+    // and new schema (valid_from/until, diary_blurred, num_days, is_published)
+    date_from: (d.date_from ?? d.valid_from ?? null) as string | null,
+    date_to: (d.date_to ?? d.valid_until ?? null) as string | null,
+    description: (d.description ?? d.diary_blurred ?? null) as string | null,
+    num_stages: ((d.num_stages ?? d.num_days ?? 0) as number),
+    stops_per_day: ((d.stops_per_day ?? 1) as number),
+    status: (d.status ?? (d.is_published ? "published" : "draft")) as string,
     cities: undefined,
-    profiles: undefined,
   };
 }
 
@@ -111,25 +118,23 @@ export async function listPlans(status?: string) {
   let q = supabase
     .from("plans")
     .select(
-      "*, cities:city_id(name, country), profiles:creator_id(display_name), plan_cards(cards(rarity))"
+      "*, cities:city_id(name, country), plan_cards(cards(rarity))"
     )
     .order("created_at", { ascending: false });
   if (status) q = q.eq("status", status as never);
   const { data } = await q;
   return (data ?? []).map((d: Record<string, unknown> & {
     cities?: { name: string; country: string } | null;
-    profiles?: { display_name: string } | null;
     plan_cards?: Array<{ cards: { rarity: string } | null }> | null;
   }) => ({
     ...d,
     city_name: d.cities?.name ?? null,
     country: d.cities?.country ?? null,
-    creator_name: d.profiles?.display_name ?? null,
+    creator_name: null,
     has_rare_cards: (d.plan_cards ?? []).some(
       (pc) => pc.cards?.rarity === "rare" || pc.cards?.rarity === "secret"
     ),
     cities: undefined,
-    profiles: undefined,
     plan_cards: undefined,
   }));
 }
