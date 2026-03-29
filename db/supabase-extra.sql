@@ -73,15 +73,17 @@ GRANT SELECT ON leaderboard_users TO anon, authenticated;
 GRANT SELECT ON leaderboard_plans TO anon, authenticated;
 
 -- Permessi CRUD su tabelle base
-GRANT SELECT, INSERT, UPDATE, DELETE ON profiles     TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON cities       TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pois         TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON plans        TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON cards        TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON plan_cards   TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON game_sessions TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON checkins     TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON reviews      TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON profiles          TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON player_profiles   TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cities            TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON pois              TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON plans             TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cards             TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON plan_cards        TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON game_sessions     TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON checkins          TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON reviews           TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON planning_sessions TO anon, authenticated;
 
 -- Permessi per chiamare le funzioni spaziali
 GRANT EXECUTE ON FUNCTION nearby_pois(double precision, double precision, double precision, integer) TO anon, authenticated;

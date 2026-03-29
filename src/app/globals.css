@@ -73,6 +73,12 @@ body {
   0% { transform: scale(0.8); opacity: 1; }
   100% { transform: scale(2); opacity: 0; }
 }
+
+/* Long-press card selection ring */
+@keyframes longpress-fill {
+  0%   { stroke-dashoffset: 138; }
+  100% { stroke-dashoffset: 0; }
+}
 .pulse-marker::before {
   content: '';
   position: absolute;

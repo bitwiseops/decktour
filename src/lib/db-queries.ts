@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, getAuthedSupabase } from "./supabase";
 import crypto from "node:crypto";
 import type {
   MoodProfile,
@@ -83,8 +83,9 @@ export async function createPlan(
   return data as Plan | null;
 }
 
-export async function getPlan(id: string) {
-  const { data } = await supabase
+export async function getPlan(id: string, token?: string) {
+  const db = token ? getAuthedSupabase(token) : supabase;
+  const { data } = await db
     .from("plans")
     .select("*, cities:city_id(name, country), profiles:creator_id(display_name)")
     .eq("id", id)
@@ -226,8 +227,9 @@ export async function updateCardImageUrl(cardId: string, imageUrl: string) {
   return data as unknown as Card & { lat: number; lon: number };
 }
 
-export async function getCardsByPlan(planId: string) {
-  const { data } = await supabase
+export async function getCardsByPlan(planId: string, token?: string) {
+  const db = token ? getAuthedSupabase(token) : supabase;
+  const { data } = await db
     .from("plan_cards_view")
     .select("*")
     .eq("plan_id", planId)

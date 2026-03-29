@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Clock, MapPin, HelpCircle, Gift, Sparkles, Zap, ImageIcon, Eye } from "lucide-react";
 import { MOODS, RARITIES, RARITY_META } from "@/lib/types";
@@ -11,6 +11,7 @@ export type HintLevel = "hard" | "medium" | "easy";
 interface GameCardProps {
   card: Card;
   index?: number;
+  isActive?: boolean;
   hintLevel?: HintLevel;
   onRevealHint?: (level: HintLevel) => void;
 }
@@ -49,20 +50,31 @@ const HINT_PENALTY_LABELS: Record<string, string> = {
   medium: "\u221240 bonus",
 };
 
-export function GameCard({ card, index = 0, hintLevel = "hard", onRevealHint }: GameCardProps) {
+export function GameCard({ card, index = 0, isActive, hintLevel = "hard", onRevealHint }: GameCardProps) {
   const [flipped, setFlipped] = useState(false);
+
+  useEffect(() => {
+    if (isActive === false) setFlipped(false);
+  }, [isActive]);
   const rarityInfo = RARITIES.find((r) => r.id === card.rarity) ?? RARITIES[0];
   const rarityBorder = RARITY_BORDER_CLASSES[card.rarity] ?? RARITY_BORDER_CLASSES.common;
   const visibleHints = getVisibleHints(card, hintLevel);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: 100, rotate: 5 }}
-      animate={{ opacity: 1, x: 0, rotate: 0 }}
-      transition={{ delay: index * 0.1, type: "spring", stiffness: 200 }}
-      className="perspective cursor-pointer w-full max-w-sm mx-auto"
-      onClick={() => setFlipped(!flipped)}
-    >
+    <>
+      {flipped && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setFlipped(false)}
+        />
+      )}
+      <motion.div
+        initial={{ opacity: 0, x: 100, rotate: 5 }}
+        animate={{ opacity: 1, x: 0, rotate: 0 }}
+        transition={{ delay: index * 0.1, type: "spring", stiffness: 200 }}
+        className={`perspective cursor-pointer w-full max-w-sm mx-auto${flipped ? " relative z-50" : ""}`}
+        onClick={() => setFlipped(!flipped)}
+      >
       <motion.div
         animate={{ rotateY: flipped ? 180 : 0 }}
         transition={{ duration: 0.6, type: "spring", stiffness: 200 }}
@@ -192,5 +204,6 @@ export function GameCard({ card, index = 0, hintLevel = "hard", onRevealHint }: 
         </div>
       </motion.div>
     </motion.div>
+    </>
   );
 }

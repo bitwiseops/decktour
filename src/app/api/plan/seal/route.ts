@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getServerSupabase, getAuthedSupabase } from "@/lib/supabase";
 import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic();
@@ -17,7 +17,9 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { session_token, custom_title } = await req.json() as { session_token: string; custom_title?: string };
+    const token = req.headers.get("authorization")!.slice(7);
     const db = getServerSupabase();
+    const authedDb = getAuthedSupabase(token);
 
     // Load planning session
     const { data: sess } = await db
@@ -74,7 +76,7 @@ Rispondi SOLO con il JSON. Formato: {"title":"...","diary_blurred":"..."}
     const finalTitle = (custom_title && custom_title.trim()) ? custom_title.trim() : aiTitle;
 
     // Insert plan
-    const { data: plan, error: planErr } = await db
+    const { data: plan, error: planErr } = await authedDb
       .from("plans")
       .insert({
         city_id: sess.city_id,
@@ -94,28 +96,17 @@ Rispondi SOLO con il JSON. Formato: {"title":"...","diary_blurred":"..."}
 
     if (planErr || !plan) {
       console.error("plan insert error:", planErr);
-      return NextResponse.json({ error: "Failed to save plan" }, { status: 500 });
+      return NextResponse.json({ error: "Failed to save plan", detail: planErr?.message }, { status: 500 });
     }
 
-    // Insert plan_days and plan_day_cards
-    const days = [...new Set(picks.map((p) => p.day_number))].sort();
-    for (const dayNum of days) {
-      const { data: planDay, error: dayErr } = await db
-        .from("plan_days")
-        .insert({ plan_id: plan.id, day_number: dayNum })
-        .select("id")
-        .single();
-
-      if (dayErr || !planDay) { console.error("plan_days insert error:", dayErr); continue; }
-
-      const dayPicks = picks.filter((p) => p.day_number === dayNum);
-      for (const pick of dayPicks) {
-        await db.from("plan_day_cards").insert({
-          plan_day_id: planDay.id,
-          card_id: pick.card_id,
-          position: pick.position,
-        });
-      }
+    // Insert plan_cards with day_number and stage_order
+    for (const pick of picks) {
+      await authedDb.from("plan_cards").insert({
+        plan_id: plan.id,
+        card_id: pick.card_id,
+        day_number: pick.day_number,
+        stage_order: pick.position,
+      });
     }
 
     // Delete planning session

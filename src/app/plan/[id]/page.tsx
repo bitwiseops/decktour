@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, BookOpen, ImageIcon } from "lucide-react";
 import { GameCard } from "@/components/game/GameCard";
+import { supabase } from "@/lib/supabase";
 import type { Card } from "@/lib/types";
 
 interface PlanData {
@@ -29,16 +30,22 @@ export default function PlanDetailPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/plans/${params.id}`).then((r) => r.json()),
-      fetch(`/api/plans/${params.id}/cards`).then((r) => r.json()),
-    ])
-      .then(([planData, cardsData]) => {
-        setPlan(planData);
-        setCards(cardsData);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      Promise.all([
+        fetch(`/api/plans/${params.id}`, { headers }).then((r) => r.json()),
+        fetch(`/api/plans/${params.id}/cards`, { headers }).then((r) => r.json()),
+      ])
+        .then(([planData, cardsData]) => {
+          setPlan(planData);
+          setCards(cardsData);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+    load();
   }, [params.id]);
 
   if (loading) {

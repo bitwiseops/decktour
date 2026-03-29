@@ -74,10 +74,10 @@ export async function POST(req: NextRequest) {
     const num_days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1);
     const total_stops = num_days * body.stops_per_day;
 
-    // Query cards for this city (filter temporaries by date)
+    // Query cards for this city
     const { data: cards, error: cardsErr } = await db
       .from("cards")
-      .select("id,rarity,mood_tags,base_points,is_temporary,valid_from,valid_until")
+      .select("id,rarity,mood_tags,is_temporary,valid_from,valid_until")
       .eq("city_id", body.city_id)
       .eq("is_active", true);
 
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No cards available for this city." }, { status: 400 });
     }
 
-    // Filter temporaries by date overlap
+    // Filter temporary cards by date overlap
     const validCards = cards.filter((c) => {
       if (!c.is_temporary) return true;
       const validFrom = c.valid_from ? new Date(c.valid_from) : null;

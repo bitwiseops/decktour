@@ -1,13 +1,13 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { MapPin, Calendar, Layers, Clock, Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { MapPin, Calendar, Layers, Clock, Loader2, ChevronLeft, ChevronRight, Search, Volume2, VolumeX } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-interface City { id: string; name: string; country: string; cover_url?: string | null; }
+interface City { id: string; name: string; country: string; cover_url?: string | null; audio_url?: string | null; }
 
 
 
@@ -140,6 +140,47 @@ export default function NewPlanPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadingCities, setLoadingCities] = useState(true);
   const [calOpen, setCalOpen] = useState<"from" | "to" | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+
+  // Play city audio when city changes
+  useEffect(() => {
+    const city = cities.find(c => c.id === cityId);
+    const url = city?.audio_url;
+    if (!url) {
+      audioRef.current?.pause();
+      return;
+    }
+    if (!audioRef.current) {
+      audioRef.current = new Audio(url);
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.35;
+    } else if (audioRef.current.src !== url && audioRef.current.src !== new URL(url, window.location.href).href) {
+      audioRef.current.pause();
+      audioRef.current = new Audio(url);
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.35;
+    }
+    if (!mutedRef.current) {
+      audioRef.current.play().catch(() => {});
+    }
+    return () => { /* keep playing across renders */ };
+  }, [cityId, cities]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { audioRef.current?.pause(); audioRef.current = null; };
+  }, []);
+
+  function toggleMute() {
+    mutedRef.current = !mutedRef.current;
+    setMuted(mutedRef.current);
+    if (audioRef.current) {
+      if (mutedRef.current) audioRef.current.pause();
+      else audioRef.current.play().catch(() => {});
+    }
+  }
 
   const today = toDateStr(new Date());
 
@@ -259,9 +300,22 @@ export default function NewPlanPage() {
         >
           {/* ── City selector ── */}
           <div className="glass rounded-xl p-4">
-            <label className="flex items-center gap-2 text-sm font-medium text-foreground/60 mb-3">
-              <MapPin size={16} /> Città
-            </label>
+            <div className="flex items-center justify-between mb-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground/60">
+                <MapPin size={16} /> Città
+              </label>
+              {cities.find(c => c.id === cityId)?.audio_url && (
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className="flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground/70 transition-colors"
+                  title={muted ? "Riattiva musica" : "Silenzia musica"}
+                >
+                  {muted ? <VolumeX size={14} /> : <Volume2 size={14} className="text-primary/70" />}
+                  <span className="hidden sm:inline">{muted ? "Audio off" : "Audio on"}</span>
+                </button>
+              )}
+            </div>
 
             {cities.length > 4 && (
               <div className="relative mb-3">
@@ -429,7 +483,7 @@ export default function NewPlanPage() {
           <button type="submit" disabled={loading || !cityId || !dateFrom || !dateTo}
             className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-base hover:bg-primary-light transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/25 disabled:opacity-50">
             {loading && <Loader2 size={18} className="animate-spin" />}
-            Costruisci il Mazzo →
+            Inizia ora →
           </button>
         </motion.form>
       )}

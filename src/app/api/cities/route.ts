@@ -5,7 +5,7 @@ export async function GET() {
   const db = getServerSupabase();
   const { data } = await db
     .from("cities")
-    .select("id,name,country,lat,lon,cover_url")
+    .select("id,name,country,lat,lon,cover_url,audio_url")
     .eq("is_active", true)
     .order("name");
   return NextResponse.json(data ?? []);

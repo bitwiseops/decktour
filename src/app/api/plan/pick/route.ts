@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase";
+import { log, error as logError } from "@/lib/logger";
 
 interface DeckCard { card_id: string; rarity: string; weight: number; }
 
@@ -41,14 +42,18 @@ export async function POST(req: NextRequest) {
 
     if (!sess) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
-    // Get card reveal data (title, story, mood_tags, rarity — no lat/lon/location_name)
-    const { data: card } = await db
+    // Get card reveal data
+    const { data: card, error: cardErr } = await db
       .from("cards")
-      .select("id,title,story,mood_tags,rarity,base_points,stop_duration")
+      .select("id,title,mood_tags,rarity")
       .eq("id", picked_card_id)
       .maybeSingle();
 
-    if (!card) return NextResponse.json({ error: "Card not found" }, { status: 404 });
+    if (cardErr || !card) {
+      logError("plan/pick card not found", { cardErr: cardErr?.message, cardErrCode: cardErr?.code, picked_card_id });
+      return NextResponse.json({ error: "Card not found", detail: cardErr?.message ?? "no row" }, { status: 404 });
+    }
+    log("plan/pick card found", { id: card.id, title: card.title });
 
     const deck: DeckCard[] = sess.deck as DeckCard[];
     const picks: Array<{ card_id: string; day_number: number; position: number; mood_tags: string[]; rarity: string }> = sess.picks as never[] ?? [];
@@ -82,7 +87,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       card_reveal: {
         title: card.title,
-        story: card.story,
         mood_tags: card.mood_tags,
         rarity: card.rarity,
         estimated_duration: sess.stop_duration,
@@ -92,6 +96,42 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("plan/pick error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { session_token, undo_to_index } = await req.json();
+    const db = getServerSupabase();
+
+    const { data: sess } = await db
+      .from("planning_sessions")
+      .select("*")
+      .eq("id", session_token)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!sess) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+
+    const deck: DeckCard[] = sess.deck as DeckCard[];
+    const picks: Array<{ card_id: string }> = (sess.picks as never[]) ?? [];
+
+    const newPicks = picks.slice(0, undo_to_index);
+    const pickedIds = newPicks.map((p) => p.card_id);
+    const new_trio = weightedDraw(deck, 3, pickedIds).map(({ card_id, rarity }) => ({ card_id, rarity }));
+
+    await db
+      .from("planning_sessions")
+      .update({ picks: newPicks, current_trio: new_trio })
+      .eq("id", session_token);
+
+    return NextResponse.json({ new_trio, picks_count: newPicks.length });
+  } catch (err) {
+    console.error("plan/pick DELETE error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

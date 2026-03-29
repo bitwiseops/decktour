@@ -12,6 +12,15 @@ export function getServerSupabase() {
   return createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
 }
 
+// Server-side client authenticated as a specific user (passes their JWT).
+// Use when the table has RLS enabled and policies check auth.uid().
+export function getAuthedSupabase(accessToken: string) {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+  });
+}
+
 // Verify a user JWT server-side and return the user (or null)
 export async function verifyToken(token: string) {
   const db = getServerSupabase();

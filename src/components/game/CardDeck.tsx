@@ -36,7 +36,7 @@ export function CardDeck({ cards, onAccept, onReshuffle, loading }: CardDeckProp
               className="absolute inset-0"
               onClick={() => setActiveIndex(i)}
             >
-              <GameCard card={card} />
+              <GameCard card={card} isActive={i === activeIndex} />
             </motion.div>
           ))}
         </AnimatePresence>

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, Edit2, ChevronRight } from "lucide-react";
+import { Loader2, Sparkles, Edit2, ChevronRight, Volume2, VolumeX } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const MOOD_EMOJI: Record<string, string> = {
@@ -30,12 +30,51 @@ export default function SealPage() {
   const [sealing, setSealing] = useState(false);
   const [planId, setPlanId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+  const [hasAudio, setHasAudio] = useState(false);
+  const [cityName, setCityName] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem("dt_planning");
     if (!raw) { router.replace("/plan/new"); return; }
     setState(JSON.parse(raw));
   }, [router]);
+
+  useEffect(() => {
+    if (!state?.city_id) return;
+    async function startCityAudio() {
+      const res = await fetch("/api/cities");
+      if (!res.ok) return;
+      const cities: Array<{ id: string; name?: string; audio_url?: string | null }> = await res.json();
+      const city = cities.find(c => c.id === state!.city_id);
+      if (city?.name) setCityName(city.name);
+      const url = city?.audio_url;
+      if (!url) return;
+      setHasAudio(true);
+      if (!audioRef.current) {
+        audioRef.current = new Audio(url);
+        audioRef.current.loop = true;
+        audioRef.current.volume = 0.35;
+      }
+      if (!mutedRef.current) audioRef.current.play().catch(() => {});
+    }
+    startCityAudio();
+  }, [state?.city_id]);
+
+  useEffect(() => {
+    return () => { audioRef.current?.pause(); audioRef.current = null; };
+  }, []);
+
+  function toggleMute() {
+    mutedRef.current = !mutedRef.current;
+    setMuted(mutedRef.current);
+    if (audioRef.current) {
+      if (mutedRef.current) audioRef.current.pause();
+      else audioRef.current.play().catch(() => {});
+    }
+  }
 
   async function handleSeal() {
     if (!state) return;
@@ -52,8 +91,8 @@ export default function SealPage() {
     });
 
     if (!res.ok) {
-      const { error: e } = await res.json().catch(() => ({}));
-      setError(e ?? "Errore nel sigillare il piano");
+      const { error: e, detail } = await res.json().catch(() => ({}));
+      setError((e ?? "Errore nel sigillare il piano") + (detail ? `: ${detail}` : ""));
       setSealing(false);
       return;
     }
@@ -87,12 +126,20 @@ export default function SealPage() {
         <h1 className="text-2xl font-bold text-center">{aiTitle ?? "Il tuo piano è pronto!"}</h1>
 
         {diaryBlurred && (
-          <div className="glass rounded-2xl p-5 w-full relative overflow-hidden">
+          <div className="glass rounded-2xl p-5 w-full relative">
             <p className="text-xs text-foreground/40 mb-3 uppercase tracking-wide">Diario del Viaggiatore</p>
-            <p className="text-sm text-foreground/80 leading-relaxed" style={{ filter: "blur(4px)", userSelect: "none" }}>
-              {diaryBlurred}
-            </p>
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div className="relative">
+              {/* First 3 lines — clear */}
+              <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3 italic" style={{ fontFamily: "var(--font-lora)", lineHeight: "1.75rem" }}>{diaryBlurred}</p>
+              {/* Rest of text — blurred */}
+              <p
+                className="text-sm text-foreground/80 leading-relaxed select-none italic"
+                style={{ fontFamily: "var(--font-lora)", lineHeight: "1.75rem", filter: "blur(5px)", marginTop: "0.1rem" }}
+              >
+                {diaryBlurred}
+              </p>
+            </div>
+            <div className="flex justify-center mt-3">
               <p className="text-xs text-foreground/60 glass px-3 py-1.5 rounded-full border border-glass-border">
                 🔒 Si svela dopo il viaggio
               </p>
@@ -112,15 +159,33 @@ export default function SealPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-8 flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-1">Sigillo del Piano</h1>
-        <p className="text-foreground/50 text-sm">Riepilogo visivo — le posizioni restano segrete fino al viaggio</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">
+            Sigillo del Piano{cityName ? ` di ${cityName}` : ""}
+          </h1>
+          <p className="text-foreground/50 text-sm">Riepilogo visivo — le posizioni restano segrete fino al viaggio</p>
+        </div>
+        {hasAudio && (
+          <button
+            type="button"
+            onClick={toggleMute}
+            className="mt-1 flex items-center gap-1 text-xs text-foreground/40 hover:text-foreground/70 transition-colors"
+            title={muted ? "Riattiva musica" : "Silenzia musica"}
+          >
+            {muted ? <VolumeX size={16} /> : <Volume2 size={16} className="text-primary/70" />}
+          </button>
+        )}
       </div>
 
       {/* Cards by day */}
-      {Object.entries(byDay).map(([day, cards]) => (
+      {Object.entries(byDay).map(([day, cards]) => {
+        const d = new Date(state.date_from);
+        d.setDate(d.getDate() + Number(day) - 1);
+        const dayLabel = d.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+        return (
         <div key={day}>
-          <p className="text-xs text-foreground/40 uppercase tracking-wider mb-2">Giorno {day}</p>
+          <p className="text-xs text-foreground/40 uppercase tracking-wider mb-2">Giorno {day} · {dayLabel}</p>
           <div className="flex flex-col gap-2">
             {cards.sort((a, b) => a.position - b.position).map((card, i) => (
               <div key={i} className="glass rounded-xl px-4 py-3 flex items-center gap-3">
@@ -136,12 +201,13 @@ export default function SealPage() {
                     <span className="text-xs text-foreground/30">{card.estimated_duration}</span>
                   </div>
                 </div>
-                <span className="text-xs text-foreground/30 flex items-center gap-1">📍???</span>
+                <span className="text-xs text-foreground/30">Tappa {card.position}</span>
               </div>
             ))}
           </div>
         </div>
-      ))}
+        );
+      })}
 
       {/* Optional custom title */}
       <div className="glass rounded-xl p-4">
