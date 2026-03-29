@@ -3,21 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
-    "seed:pois": "npx tsx scripts/seed-permanent-pois.ts",
-    "seed:events": "npx tsx scripts/seed-events.ts"
+    "seed:pois": "node --env-file=.env.local --import=tsx scripts/seed-permanent-pois.ts",
+    "seed:events": "node --env-file=.env.local --import=tsx scripts/seed-events.ts",
+    "setup:supabase": "node --env-file=.env.local --import=tsx scripts/setup-supabase.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@fal-ai/client": "^1.9.5",
+    "@supabase/supabase-js": "^2.100.1",
+    "@types/leaflet": "^1.9.21",
     "@types/mapbox-gl": "^3.4.1",
     "framer-motion": "^12.38.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.7.0",
     "mapbox-gl": "^3.20.0",
     "next": "16.2.1",
@@ -27,6 +31,7 @@
     "react-dom": "19.2.4",
     "react-map-gl": "^8.1.0",
     "recharts": "^3.8.1",
+    "server-only": "^0.0.1",
     "tsx": "^4.21.0"
   },
   "devDependencies": {

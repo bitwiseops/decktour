@@ -1,4 +1,4 @@
-import { query, queryOne } from "./db";
+import { supabase, getAuthedSupabase } from "./supabase";
 import crypto from "node:crypto";
 import type {
   MoodProfile,
@@ -9,6 +9,7 @@ import type {
   QuizQuestion,
   GeneratedCard,
   CardRarity,
+  MissionType,
 } from "./types";
 import { RARITY_POWER } from "./types";
 
@@ -19,32 +20,41 @@ function generateVoucherCode(): string {
 // ── Profiles ──
 
 export async function getProfile(id: string) {
-  return queryOne("SELECT * FROM profiles WHERE id = $1", [id]);
+  const { data } = await supabase.from("profiles").select("*").eq("id", id).single();
+  return data;
 }
 
 export async function upsertMoodProfile(id: string, mood: MoodProfile) {
-  return queryOne(
-    `UPDATE profiles SET
-       mood_shopping = $2, mood_food = $3, mood_art = $4,
-       mood_nature = $5, mood_nightlife = $6, updated_at = now()
-     WHERE id = $1 RETURNING *`,
-    [id, mood.shopping, mood.food, mood.art, mood.nature, mood.nightlife]
-  );
+  const { data } = await supabase
+    .from("profiles")
+    .update({
+      mood_shopping: mood.shopping,
+      mood_food: mood.food,
+      mood_art: mood.art,
+      mood_nature: mood.nature,
+      mood_nightlife: mood.nightlife,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  return data;
 }
 
 // ── Cities ──
 
 export async function getCities(): Promise<City[]> {
-  return query<City>(
-    "SELECT id, name, country, image_url, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon FROM cities ORDER BY name"
-  );
+  const { data } = await supabase.from("cities_view").select("*").order("name");
+  return (data ?? []) as unknown as City[];
 }
 
 export async function getCityByName(name: string) {
-  return queryOne<City>(
-    "SELECT id, name, country, image_url, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon FROM cities WHERE LOWER(name) = LOWER($1)",
-    [name]
-  );
+  const { data } = await supabase
+    .from("cities_view")
+    .select("*")
+    .ilike("name", name)
+    .maybeSingle();
+  return data as unknown as City | null;
 }
 
 // ── Plans ──
@@ -58,154 +68,236 @@ export async function createPlan(
   numStages: number,
   avgDuration: number
 ) {
-  return queryOne<Plan>(
-    `INSERT INTO plans (creator_id, city_id, title, date_from, date_to, num_stages, avg_stage_duration_min)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [creatorId, cityId, title, dateFrom, dateTo, numStages, avgDuration]
-  );
+  const { data } = await supabase
+    .from("plans")
+    .insert({
+      creator_id: creatorId,
+      city_id: cityId,
+      title,
+      date_from: dateFrom,
+      date_to: dateTo,
+      num_stages: numStages,
+      avg_stage_duration_min: avgDuration,
+    })
+    .select("*")
+    .single();
+  return data as Plan | null;
 }
 
-export async function getPlan(id: string) {
-  return queryOne(
-    `SELECT p.*,
-       c.name AS city_name, c.country,
-       ST_Y(c.location::geometry) AS city_lat, ST_X(c.location::geometry) AS city_lon,
-       pr.display_name AS creator_name
-     FROM plans p
-     JOIN cities c ON c.id = p.city_id
-     JOIN profiles pr ON pr.id = p.creator_id
-     WHERE p.id = $1`,
-    [id]
-  );
+export async function getPlan(id: string, token?: string) {
+  const db = token ? getAuthedSupabase(token) : supabase;
+  const { data, error } = await db
+    .from("plans")
+    .select("*, cities:city_id(name, country)")
+    .eq("id", id)
+    .single();
+  if (error) console.error("getPlan error:", error.message);
+  if (!data) return null;
+  const d = data as Record<string, unknown> & {
+    cities?: { name: string; country: string } | null;
+  };
+  return {
+    ...d,
+    city_name: d.cities?.name ?? null,
+    country: d.cities?.country ?? null,
+    city_lat: null,
+    city_lon: null,
+    creator_name: null,
+    // Normalize: handle both old schema (date_from/to, description, num_stages, status)
+    // and new schema (valid_from/until, diary_blurred, num_days, is_published)
+    date_from: (d.date_from ?? d.valid_from ?? null) as string | null,
+    date_to: (d.date_to ?? d.valid_until ?? null) as string | null,
+    description: (d.description ?? d.diary_blurred ?? null) as string | null,
+    num_stages: ((d.num_stages ?? d.num_days ?? 0) as number),
+    stops_per_day: ((d.stops_per_day ?? 1) as number),
+    status: (d.status ?? (d.is_published ? "published" : "draft")) as string,
+    cities: undefined,
+  };
 }
 
 export async function listPlans(status?: string) {
-  const where = status ? "WHERE p.status = $1" : "";
-  const params = status ? [status] : [];
-  return query(
-    `SELECT p.*,
-       c.name AS city_name, c.country,
-       pr.display_name AS creator_name,
-       EXISTS (
-         SELECT 1 FROM cards ca
-         WHERE ca.plan_id = p.id AND ca.rarity IN ('rare', 'secret')
-       ) AS has_rare_cards
-     FROM plans p
-     JOIN cities c ON c.id = p.city_id
-     JOIN profiles pr ON pr.id = p.creator_id
-     ${where}
-     ORDER BY p.created_at DESC`,
-    params
-  );
+  let q = supabase
+    .from("plans")
+    .select("*, cities:city_id(name, country)")
+    .order("created_at", { ascending: false });
+  if (status) q = q.eq("status", status as never);
+  const { data } = await q;
+  return (data ?? []).map((d: Record<string, unknown> & {
+    cities?: { name: string; country: string } | null;
+  }) => ({
+    ...d,
+    city_name: d.cities?.name ?? null,
+    country: d.cities?.country ?? null,
+    creator_name: null,
+    has_rare_cards: false,
+    cities: undefined,
+  }));
 }
 
 export async function updatePlanStatus(id: string, status: string) {
-  return queryOne("UPDATE plans SET status = $2, updated_at = now() WHERE id = $1 RETURNING *", [
-    id,
-    status,
-  ]);
+  const { data } = await supabase
+    .from("plans")
+    .update({ status: status as never, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*")
+    .single();
+  return data;
 }
 
 export async function updatePlanDescription(id: string, description: string) {
-  return queryOne<Plan>(
-    "UPDATE plans SET description = $2, updated_at = now() WHERE id = $1 RETURNING *",
-    [id, description]
-  );
+  const { data } = await supabase
+    .from("plans")
+    .update({ description, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*")
+    .single();
+  return data as Plan | null;
 }
 
 export async function updatePlanImageUrl(id: string, imageUrl: string) {
-  return queryOne<Plan>(
-    "UPDATE plans SET image_url = $2, updated_at = now() WHERE id = $1 RETURNING *",
-    [id, imageUrl]
-  );
+  const { data } = await supabase
+    .from("plans")
+    .update({ image_url: imageUrl, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*")
+    .single();
+  return data as Plan | null;
 }
 
 // ── Cards ──
 
 export async function insertCards(
   planId: string,
+  cityId: string,
   cards: (GeneratedCard & { day_number: number; stage_order: number })[],
   durationMin: number
 ) {
-  const values: unknown[] = [];
-  const placeholders: string[] = [];
-  let idx = 1;
-
-  for (const c of cards) {
-    const rarity = c.rarity || "common";
+  const rows = cards.map((c) => {
+    const rarity = (c.rarity || "common") as CardRarity;
     const powerLevel = RARITY_POWER[rarity] ?? 1;
-    const hasVoucher = Boolean(c.suggested_voucher);
-    placeholders.push(
-      `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++},
-        $${idx++}::mood_type[], ST_SetSRID(ST_MakePoint($${idx++}, $${idx++}), 4326)::geography,
-        $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++},
-        $${idx++}, $${idx++}::card_rarity, $${idx++})`
-    );
-    values.push(
-      planId,
-      c.day_number,
-      c.stage_order,
-      c.title,
-      c.description,
-      `{${c.moods.join(",")}}`,
-      c.lon,
-      c.lat,
-      durationMin,
-      JSON.stringify(c.quiz_data),
-      c.hint_hard,
-      c.hint_medium,
-      c.hint_easy,
-      c.historical_info,
-      c.suggested_voucher || null,
-      c.suggested_voucher_partner || null,
-      hasVoucher ? generateVoucherCode() : null,
-      c.is_temporary_event,
+    return {
+      city_id: cityId,
+      title: c.title,
+      description: c.description,
+      moods: c.moods,
+      // PostGIS geography in WKT format — accettato da PostgREST
+      location: `SRID=4326;POINT(${c.lon} ${c.lat})`,
+      duration_min: durationMin,
+      quiz_data: c.quiz_data,
+      hint_hard: c.hint_hard,
+      hint_medium: c.hint_medium,
+      hint_easy: c.hint_easy,
+      historical_info: c.historical_info,
+      voucher_description: c.suggested_voucher || null,
+      voucher_partner: c.suggested_voucher_partner || null,
+      voucher_code: c.suggested_voucher ? generateVoucherCode() : null,
+      is_temporary_event: c.is_temporary_event,
       rarity,
-      powerLevel
-    );
-  }
+      power_level: powerLevel,
+    };
+  });
 
-  return query<Card>(
-    `INSERT INTO cards (plan_id, day_number, stage_order, title, description,
-       moods, location, duration_min, quiz_data, hint_hard, hint_medium, hint_easy, historical_info,
-       voucher_description, voucher_partner, voucher_code,
-       is_temporary_event, rarity, power_level)
-     VALUES ${placeholders.join(", ")}
-     RETURNING *, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon`,
-    values
-  );
+  const { data: insertedCards } = await supabase
+    .from("cards")
+    .insert(rows as never[])
+    .select("id");
+
+  // Crea le associazioni plan_cards
+  const planCardRows = (insertedCards ?? []).map((card: { id: string }, i: number) => ({
+    plan_id: planId,
+    card_id: card.id,
+    day_number: cards[i].day_number,
+    stage_order: cards[i].stage_order,
+  }));
+  await supabase.from("plan_cards").insert(planCardRows as never[]);
+
+  // Rilegge via getCardsByPlan
+  return getCardsByPlan(planId);
 }
 
 export async function updateCardImageUrl(cardId: string, imageUrl: string) {
-  return queryOne<Card>(
-    "UPDATE cards SET image_url = $2 WHERE id = $1 RETURNING *, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon",
-    [cardId, imageUrl]
-  );
+  await supabase.from("cards").update({ image_url: imageUrl }).eq("id", cardId);
 }
 
-export async function getCardsByPlan(planId: string) {
-  return query<Card & { lat: number; lon: number }>(
-    `SELECT c.*, ST_Y(c.location::geometry) AS lat, ST_X(c.location::geometry) AS lon
-     FROM cards c WHERE c.plan_id = $1
-     ORDER BY c.day_number, c.stage_order`,
-    [planId]
-  );
+export async function getCardsByPlan(planId: string, token?: string) {
+  const db = token ? getAuthedSupabase(token) : supabase;
+
+  // Join plan_cards → cards (old DB schema)
+  const { data } = await db
+    .from("plan_cards")
+    .select("day_number, stage_order, cards(*)")
+    .eq("plan_id", planId)
+    .order("day_number")
+    .order("stage_order");
+
+  if (!data || data.length === 0) return [] as (Card & { lat: number; lon: number })[];
+
+  type RawCard = Record<string, unknown>;
+  type RawRow = { day_number: number; stage_order: number; cards: RawCard | null };
+
+  return (data as RawRow[]).flatMap((row) => {
+    const c = row.cards;
+    if (!c) return [];
+    const ch = (c.challenge_content as Record<string, unknown>) ?? {};
+    const rarity = (c.rarity as CardRarity) ?? "common";
+    const card: Card & { lat: number; lon: number } = {
+      id: c.id as string,
+      city_id: c.city_id as string,
+      poi_id: null,
+      day_number: row.day_number,
+      stage_order: row.stage_order,
+      title: c.title as string,
+      description: (c.story as string) ?? "",
+      moods: (c.mood_tags as MoodType[]) ?? [],
+      image_url: (c.photo_url as string | null) ?? null,
+      lat: c.lat as number,
+      lon: c.lon as number,
+      duration_min: 60,
+      mission_type: "quiz" as MissionType,
+      quiz_data: ch.question
+        ? [{
+            question: ch.question as string,
+            options: (ch.options as string[]) ?? [],
+            correctIndex: (ch.correct_index as number) ?? 0,
+            explanation: (ch.fun_fact as string) ?? "",
+          } as QuizQuestion]
+        : [],
+      hint_hard: (ch.clue_primary as string) ?? "",
+      hint_medium: (ch.clue_extra as string) ?? "",
+      hint_easy: (ch.location_name as string) ?? "",
+      historical_info: "",
+      rarity,
+      power_level: RARITY_POWER[rarity] ?? 1,
+      base_score: (c.base_points as number) ?? 100,
+      voucher_description: (c.voucher_text as string | null) ?? null,
+      voucher_partner: null,
+      voucher_code: null,
+      voucher_validity_radius: 0,
+      is_temporary_event: (c.is_temporary as boolean) ?? false,
+    };
+    return [card];
+  });
 }
 
 // ── Game Sessions ──
 
 export async function createSession(playerId: string, planId: string) {
-  return queryOne(
-    `INSERT INTO game_sessions (player_id, plan_id) VALUES ($1, $2) RETURNING *`,
-    [playerId, planId]
-  );
+  const { data } = await supabase
+    .from("game_sessions")
+    .insert({ player_id: playerId, plan_id: planId })
+    .select("*")
+    .single();
+  return data;
 }
 
 export async function completeSession(sessionId: string) {
-  return queryOne(
-    `UPDATE game_sessions SET status = 'completed', completed_at = now() WHERE id = $1 RETURNING *`,
-    [sessionId]
-  );
+  const { data } = await supabase
+    .from("game_sessions")
+    .update({ status: "completed" as never, completed_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .select("*")
+    .single();
+  return data;
 }
 
 // ── Check-ins ──
@@ -226,31 +318,38 @@ export async function insertCheckIn(
   scoreEarned: number
 ) {
   const voucherUnlocked = locationValid && quizCorrect > 0;
-  return queryOne(
-    `INSERT INTO checkins
-       (session_id, card_id, player_id, player_location,
-        distance_meters, location_valid, location_exact,
-        quiz_answers, quiz_correct, quiz_total, hints_revealed,
-        score_earned, voucher_unlocked)
-     VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($5, $4), 4326)::geography,
-        $6, $7, $8, $9, $10, $11, $12, $13, $14)
-     RETURNING *`,
-    [
-      sessionId, cardId, playerId, playerLat, playerLon,
-      distanceMeters, locationValid, locationExact,
-      JSON.stringify(quizAnswers), quizCorrect, quizTotal, hintsRevealed, scoreEarned,
-      voucherUnlocked,
-    ]
-  );
+  const { data } = await supabase
+    .from("checkins")
+    .insert({
+      session_id: sessionId,
+      card_id: cardId,
+      player_id: playerId,
+      player_location: `SRID=4326;POINT(${playerLon} ${playerLat})`,
+      distance_meters: distanceMeters,
+      location_valid: locationValid,
+      location_exact: locationExact,
+      quiz_answers: quizAnswers,
+      quiz_correct: quizCorrect,
+      quiz_total: quizTotal,
+      hints_revealed: hintsRevealed,
+      score_earned: scoreEarned,
+      voucher_unlocked: voucherUnlocked,
+    } as never)
+    .select("*")
+    .single();
+  return data;
 }
 
 // ── Spatial queries ──
 
 export async function nearbyPois(lat: number, lon: number, radiusM = 5000, limit = 50) {
-  return query(
-    "SELECT * FROM nearby_pois($1, $2, $3, $4)",
-    [lat, lon, radiusM, limit]
-  );
+  const { data } = await supabase.rpc("nearby_pois", {
+    search_lat: lat,
+    search_lon: lon,
+    radius_meters: radiusM,
+    lim: limit,
+  });
+  return data ?? [];
 }
 
 // ── POI selection for card generation ──
@@ -269,10 +368,21 @@ export interface SelectedPoi {
   source_name: string | null;
 }
 
+function moodScore(moods: MoodType[], profile: MoodProfile): number {
+  let s = 0;
+  for (const m of moods) {
+    if (m === "shopping") s += profile.shopping;
+    else if (m === "food") s += profile.food;
+    else if (m === "art") s += profile.art;
+    else if (m === "nature") s += profile.nature;
+    else if (m === "nightlife") s += profile.nightlife;
+  }
+  return s;
+}
+
 /**
- * Select POIs from DB for card generation.
- * Filters by city, prioritizes by mood affinity, includes temporary events in date range.
- * Returns 3 POIs per call, excluding already-used ones.
+ * Seleziona POI dal DB per la generazione delle carte.
+ * Filtra per città, ordina per affinità mood (calcolata lato JS), esclude già usati.
  */
 export async function selectPoisForStage(
   cityId: string,
@@ -282,39 +392,49 @@ export async function selectPoisForStage(
   excludePoiIds: string[],
   limit: number = 3
 ): Promise<SelectedPoi[]> {
-  // Build mood scoring expression: higher score for POIs matching dominant moods
-  const moodWeights = `
-    CASE WHEN 'shopping' = ANY(p.moods) THEN ${moodProfile.shopping} ELSE 0 END +
-    CASE WHEN 'food' = ANY(p.moods) THEN ${moodProfile.food} ELSE 0 END +
-    CASE WHEN 'art' = ANY(p.moods) THEN ${moodProfile.art} ELSE 0 END +
-    CASE WHEN 'nature' = ANY(p.moods) THEN ${moodProfile.nature} ELSE 0 END +
-    CASE WHEN 'nightlife' = ANY(p.moods) THEN ${moodProfile.nightlife} ELSE 0 END
-  `;
+  let q = supabase.from("pois_view").select("*").eq("city_id", cityId).limit(150);
 
-  const excludeClause = excludePoiIds.length > 0
-    ? `AND p.id != ALL($3::uuid[])`
-    : "";
-  const params: unknown[] = [cityId, dateTo];
   if (excludePoiIds.length > 0) {
-    params.push(excludePoiIds);
+    q = q.not("id", "in", `(${excludePoiIds.join(",")})`);
   }
 
-  const rows = await query<SelectedPoi>(
-    `SELECT * FROM (
-       SELECT p.id, p.name, p.description,
-         ST_Y(p.location::geometry) AS lat, ST_X(p.location::geometry) AS lon,
-         p.moods::text[] AS moods, p.event_kind, p.valid_from, p.valid_to, p.source_url, p.source_name,
-         (${moodWeights}) AS mood_score,
-         RANDOM() * 0.3 AS serendipity
-       FROM pois p
-       WHERE p.city_id = $1
-         AND (p.event_kind = 'permanent' OR (p.valid_from <= $2::date AND p.valid_to >= $2::date - interval '30 days'))
-         ${excludeClause}
-     ) sub
-     ORDER BY mood_score + serendipity DESC
-     LIMIT ${limit}`,
-    params
-  );
+  const { data: pois } = await q;
 
-  return rows;
+  const candidates = (pois ?? []).filter((p: Record<string, unknown>) => {
+    if (p.event_kind === "permanent") return true;
+    // per eventi temporanei controlla sovrapposizione date
+    return (
+      String(p.valid_from) <= dateTo &&
+      String(p.valid_to) >= dateFrom
+    );
+  });
+
+  const scored = candidates
+    .map((p: Record<string, unknown>) => ({
+      ...p,
+      _score: moodScore((p.moods as MoodType[]) ?? [], moodProfile) + Math.random() * 0.3,
+    }))
+    .sort((a, b) => (b._score as number) - (a._score as number));
+
+  return scored.slice(0, limit) as unknown as SelectedPoi[];
+}
+
+// ── Score ─────────────────────────────────────────────────────────────────────
+
+export async function addPlayerScore(playerId: string, delta: number) {
+  const { data: current, error: fetchErr } = await supabase
+    .from("profiles")
+    .select("total_score")
+    .eq("id", playerId)
+    .single();
+  if (fetchErr && fetchErr.code !== "PGRST116") throw fetchErr;
+  const newTotal = (current?.total_score ?? 0) + delta;
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ total_score: newTotal })
+    .eq("id", playerId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }

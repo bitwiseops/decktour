@@ -12,84 +12,76 @@ interface GameMapProps {
 
 export function GameMap({ cards, activeCardIndex, playerPosition, className = "" }: GameMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapRef = useRef<any>(null);
 
   useEffect(() => {
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!mapContainer.current || !token || cards.length === 0) return;
-
+    if (!mapContainer.current || cards.length === 0) return;
     let cancelled = false;
 
-    import("mapbox-gl").then((mapboxgl) => {
+    import("leaflet").then((L) => {
       if (cancelled || !mapContainer.current) return;
-
-      (mapboxgl as unknown as { accessToken: string }).accessToken = token;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
 
       const center = cards[activeCardIndex] ?? cards[0];
-      const map = new mapboxgl.default.Map({
-        container: mapContainer.current,
-        style: "mapbox://styles/mapbox/dark-v11",
-        center: [center.lon, center.lat],
-        zoom: 14,
-      });
+      const map = L.map(mapContainer.current, { zoomControl: false }).setView(
+        [center.lat, center.lon],
+        14
+      );
       mapRef.current = map;
 
-      map.on("load", () => {
-        // Add route line
-        const coords = cards.map((c) => [c.lon, c.lat]);
-        map.addSource("route", {
-          type: "geojson",
-          data: {
-            type: "Feature",
-            properties: {},
-            geometry: { type: "LineString", coordinates: coords },
-          },
-        });
-        map.addLayer({
-          id: "route",
-          type: "line",
-          source: "route",
-          paint: {
-            "line-color": "#6366f1",
-            "line-width": 3,
-            "line-dasharray": [2, 2],
-          },
-        });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+        maxZoom: 19,
+      }).addTo(map);
 
-        // Add markers
-        cards.forEach((card, i) => {
-          const el = document.createElement("div");
-          el.className = `w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 ${
-            i === activeCardIndex
-              ? "bg-primary border-white text-white pulse-marker relative"
-              : "bg-card-bg border-glass-border text-foreground/60"
-          }`;
-          el.textContent = String(i + 1);
+      // Route polyline
+      if (cards.length > 1) {
+        L.polyline(
+          cards.map((c) => [c.lat, c.lon] as [number, number]),
+          { color: "#6366f1", weight: 3, dashArray: "6 6" }
+        ).addTo(map);
+      }
 
-          const marker = new mapboxgl.default.Marker({ element: el })
-            .setLngLat([card.lon, card.lat])
-            .addTo(map);
-          markersRef.current.push(marker);
+      // Card markers
+      cards.forEach((card, i) => {
+        const isActive = i === activeCardIndex;
+        const icon = L.divIcon({
+          className: "",
+          html: `<div style="width:28px;height:28px;border-radius:50%;background:${
+            isActive ? "#6366f1" : "rgba(30,27,50,0.9)"
+          };border:2px solid ${
+            isActive ? "white" : "rgba(255,255,255,0.3)"
+          };display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:${
+            isActive ? "white" : "rgba(255,255,255,0.5)"
+          };box-shadow:0 2px 6px rgba(0,0,0,0.5);">${i + 1}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
         });
-
-        // Player position
-        if (playerPosition) {
-          const playerEl = document.createElement("div");
-          playerEl.className = "w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-lg";
-          new mapboxgl.default.Marker({ element: playerEl })
-            .setLngLat([playerPosition.lon, playerPosition.lat])
-            .addTo(map);
-        }
+        L.marker([card.lat, card.lon], { icon }).addTo(map);
       });
+
+      // Player position
+      if (playerPosition) {
+        const playerIcon = L.divIcon({
+          className: "",
+          html: `<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        });
+        L.marker([playerPosition.lat, playerPosition.lon], { icon: playerIcon }).addTo(map);
+      }
     });
 
     return () => {
       cancelled = true;
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
-      mapRef.current?.remove();
-      mapRef.current = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, [cards, activeCardIndex, playerPosition]);
 
@@ -97,7 +89,7 @@ export function GameMap({ cards, activeCardIndex, playerPosition, className = ""
     <div
       ref={mapContainer}
       className={`w-full rounded-2xl overflow-hidden ${className}`}
-      style={{ minHeight: 250 }}
+      style={{ minHeight: 200 }}
     />
   );
 }

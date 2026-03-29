@@ -1,502 +1,492 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, Calendar, Layers, Loader2, Sparkles } from "lucide-react";
-import { DraftingDeck } from "@/components/game/DraftingDeck";
-import type { MoodProfile, City, GeneratedCard } from "@/lib/types";
+import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
+import { MapPin, Calendar, Layers, Clock, Loader2, ChevronLeft, ChevronRight, Search, Volume2, VolumeX } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
-type DraftCard = GeneratedCard & { day_number: number; stage_order: number };
+interface City { id: string; name: string; country: string; cover_url?: string | null; audio_url?: string | null; }
 
-type Step = "city" | "dates" | "config" | "generating" | "drafting" | "saving";
 
-const MAX_RESHUFFLES = 2;
+
+const DURATIONS = [
+  { value: "1h", label: "1 ora" },
+  { value: "2h", label: "2 ore" },
+  { value: "half_day", label: "Mezza giornata" },
+];
+
+const MONTHS_IT = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+const DAYS_IT = ["Lu","Ma","Me","Gi","Ve","Sa","Do"];
+
+function toDateStr(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function CalendarPicker({
+  value,
+  minStr,
+  rangeStart,
+  rangeEnd,
+  onSelect,
+}: {
+  value: string;
+  minStr: string;
+  rangeStart: string;
+  rangeEnd: string;
+  onSelect: (val: string) => void;
+}) {
+  const todayStr = toDateStr(new Date());
+  const init = value || minStr || todayStr;
+  const [viewYear, setViewYear] = useState(() => parseInt(init.slice(0, 4)));
+  const [viewMonth, setViewMonth] = useState(() => parseInt(init.slice(5, 7)) - 1);
+
+  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  const offset = firstDow === 0 ? 6 : firstDow - 1;
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  function dayStr(d: number) {
+    return `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  }
+
+  // Disable prev if prev month is entirely before minStr
+  const lastOfPrevMonth = toDateStr(new Date(viewYear, viewMonth, 0));
+  const canGoPrev = lastOfPrevMonth >= minStr;
+
+  return (
+    <div className="rounded-2xl bg-white/5 border border-glass-border p-4 shadow-xl">
+      <div className="flex items-center justify-between mb-3">
+        <button type="button" onClick={prevMonth} disabled={!canGoPrev}
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors disabled:opacity-20">
+          <ChevronLeft size={16} />
+        </button>
+        <span className="font-semibold text-sm">{MONTHS_IT[viewMonth]} {viewYear}</span>
+        <button type="button" onClick={nextMonth}
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors">
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS_IT.map(d => (
+          <div key={d} className="text-center text-xs text-foreground/30 py-1">{d}</div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const ds = dayStr(d);
+          const disabled = ds < minStr;
+          const isSelected = ds === value;
+          const inRange = rangeStart && rangeEnd && ds > rangeStart && ds < rangeEnd;
+          const isStart = rangeStart && ds === rangeStart;
+          const isEnd = rangeEnd && ds === rangeEnd;
+          const isToday = ds === todayStr;
+
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelect(ds)}
+              className={[
+                "relative h-9 flex items-center justify-center text-sm font-medium transition-all",
+                disabled ? "opacity-20 cursor-not-allowed" : "cursor-pointer",
+                isSelected ? "bg-primary text-white rounded-lg shadow-lg shadow-primary/30 z-10" : "",
+                !isSelected && inRange ? "bg-primary/20" : "",
+                !isSelected && isStart ? "bg-primary/20 rounded-l-lg" : "",
+                !isSelected && isEnd ? "bg-primary/20 rounded-r-lg" : "",
+                !isSelected && !inRange && !isStart && !isEnd && !disabled ? "hover:bg-white/10 rounded-lg" : "",
+                isToday && !isSelected ? "text-primary font-bold" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function NewPlanPage() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("city");
   const [cities, setCities] = useState<City[]>([]);
-  const [selectedCity, setSelectedCity] = useState<City | null>(null);
+  const [cityId, setCityId] = useState("");
+  const [citySearch, setCitySearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [stagesPerDay, setStagesPerDay] = useState(3);
-  const [durationMin, setDurationMin] = useState(90);
-  const [moodProfile, setMoodProfile] = useState<MoodProfile | null>(null);
+  const [stopsPerDay, setStopsPerDay] = useState(2);
+  const [stopDuration, setStopDuration] = useState("2h");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [progressMsg, setProgressMsg] = useState("");
-  const [progressPct, setProgressPct] = useState(0);
+  const [loadingCities, setLoadingCities] = useState(true);
+  const [calOpen, setCalOpen] = useState<"from" | "to" | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
 
-  // Drafting state
-  const [planTitle, setPlanTitle] = useState("");
-  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
-  const [allCards, setAllCards] = useState<DraftCard[]>([]);
-  const [stageKeys, setStageKeys] = useState<string[]>([]);
-  const [currentStageIdx, setCurrentStageIdx] = useState(0);
-  const [acceptedCards, setAcceptedCards] = useState<DraftCard[]>([]);
-  const [reshufflesLeft, setReshufflesLeft] = useState(MAX_RESHUFFLES);
-  const [reshuffleLoading, setReshuffleLoading] = useState(false);
+  // Play city audio when city changes
+  useEffect(() => {
+    const city = cities.find(c => c.id === cityId);
+    const url = city?.audio_url;
+    if (!url) {
+      audioRef.current?.pause();
+      return;
+    }
+    if (!audioRef.current) {
+      audioRef.current = new Audio(url);
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.35;
+    } else if (audioRef.current.src !== url && audioRef.current.src !== new URL(url, window.location.href).href) {
+      audioRef.current.pause();
+      audioRef.current = new Audio(url);
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.35;
+    }
+    if (!mutedRef.current) {
+      audioRef.current.play().catch(() => {});
+    }
+    return () => { /* keep playing across renders */ };
+  }, [cityId, cities]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { audioRef.current?.pause(); audioRef.current = null; };
+  }, []);
+
+  function toggleMute() {
+    mutedRef.current = !mutedRef.current;
+    setMuted(mutedRef.current);
+    if (audioRef.current) {
+      if (mutedRef.current) audioRef.current.pause();
+      else audioRef.current.play().catch(() => {});
+    }
+  }
+
+  const today = toDateStr(new Date());
+
+  const DRAFT_KEY = "dt_new_plan_draft";
+
+  // Restore saved draft on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const d = JSON.parse(saved) as {
+          cityId?: string; dateFrom?: string; dateTo?: string;
+          stopsPerDay?: number; stopDuration?: string;
+        };
+        if (d.cityId)      setCityId(d.cityId);
+        // Only restore dates that are still in the future
+        if (d.dateFrom && d.dateFrom >= today) setDateFrom(d.dateFrom);
+        if (d.dateTo   && d.dateTo   >= today) setDateTo(d.dateTo);
+        if (d.stopsPerDay)  setStopsPerDay(d.stopsPerDay);
+        if (d.stopDuration) setStopDuration(d.stopDuration);
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem("deckTourMoodProfile");
-    if (stored) {
-      setMoodProfile(JSON.parse(stored));
-    } else {
-      setMoodProfile({ shopping: 50, food: 50, art: 50, nature: 50, nightlife: 50 });
-    }
-
     fetch("/api/cities")
       .then((r) => r.json())
-      .then(setCities)
-      .catch(() => {});
+      .then((data: City[]) => {
+        setCities(data);
+        // Only set default city if nothing was restored from draft
+        setCityId(prev => prev || (data.length > 0 ? data[0].id : ""));
+      })
+      .catch(() => {})
+      .finally(() => setLoadingCities(false));
   }, []);
 
-  // Derive stage keys from allCards
-  const getStageKeys = useCallback((cards: DraftCard[]) => {
-    const keys = new Set<string>();
-    cards.forEach((c) => keys.add(`${c.day_number}-${c.stage_order}`));
-    return Array.from(keys).sort((a, b) => {
-      const [ad, as_] = a.split("-").map(Number);
-      const [bd, bs] = b.split("-").map(Number);
-      return ad !== bd ? ad - bd : as_ - bs;
-    });
-  }, []);
+  // Persist draft whenever any field changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ cityId, dateFrom, dateTo, stopsPerDay, stopDuration }));
+    } catch { /* ignore */ }
+  }, [cityId, dateFrom, dateTo, stopsPerDay, stopDuration]);
 
-  const cardsForStage = useCallback(
-    (stageKey: string) => {
-      const [day, stage] = stageKey.split("-").map(Number);
-      return allCards.filter(
-        (c) => c.day_number === day && c.stage_order === stage
-      );
-    },
-    [allCards]
+  const filteredCities = cities.filter(c =>
+    citySearch === "" ||
+    c.name.toLowerCase().includes(citySearch.toLowerCase()) ||
+    c.country.toLowerCase().includes(citySearch.toLowerCase())
   );
 
-  const handleGenerate = async () => {
-    if (!moodProfile || !selectedCity) return;
-    setStep("generating");
+  function formatDate(s: string) {
+    if (!s) return "";
+    const [y, m, d] = s.split("-");
+    return `${d} ${MONTHS_IT[parseInt(m) - 1].slice(0, 3)} ${y}`;
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!cityId || !dateFrom || !dateTo) { setError("Compila tutti i campi."); return; }
+    if (dateFrom > dateTo) { setError("La data di fine deve essere successiva alla data di inizio."); return; }
+
+    setLoading(true);
     setError(null);
-    setProgressMsg("Avvio generazione...");
-    setProgressPct(0);
 
-    try {
-      const res = await fetch("/api/ai/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          city: selectedCity.name,
-          country: selectedCity.country,
-          moodProfile,
-          dateFrom,
-          dateTo,
-          numStagesPerDay: stagesPerDay,
-          avgStageDurationMin: durationMin,
-        }),
-      });
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { router.replace("/"); return; }
 
-      if (!res.ok) throw new Error("Errore nella generazione");
+    const res = await fetch("/api/plan/init", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ city_id: cityId, date_from: dateFrom, date_to: dateTo, stops_per_day: stopsPerDay, stop_duration: stopDuration }),
+    });
 
-      // Parse SSE stream
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No stream");
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finalData: { title: string; coverImageUrl: string | null; cards: DraftCard[]; numDays: number } | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ") && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (eventType === "progress") {
-                setProgressMsg(data.message);
-                if (data.total > 0) {
-                  setProgressPct(Math.round((data.current / data.total) * 100));
-                }
-              } else if (eventType === "complete") {
-                finalData = data;
-              } else if (eventType === "error") {
-                throw new Error(data.message);
-              }
-            } catch (e) {
-              if (e instanceof SyntaxError) continue;
-              throw e;
-            }
-            eventType = "";
-          }
-        }
-      }
-
-      if (!finalData) throw new Error("Generazione incompleta");
-
-      setPlanTitle(finalData.title);
-      setCoverImageUrl(finalData.coverImageUrl ?? null);
-      setAllCards(finalData.cards);
-      const keys = getStageKeys(finalData.cards);
-      setStageKeys(keys);
-      setCurrentStageIdx(0);
-      setAcceptedCards([]);
-      setReshufflesLeft(MAX_RESHUFFLES);
-      setStep("drafting");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Errore sconosciuto");
-      setStep("config");
+    if (!res.ok) {
+      const { error: e } = await res.json().catch(() => ({}));
+      setError(e ?? "Errore nella creazione del piano");
+      setLoading(false);
+      return;
     }
-  };
 
-  const handleAcceptCard = useCallback(
-    (card: DraftCard) => {
-      const updated = [...acceptedCards, card];
-      setAcceptedCards(updated);
-
-      // Move to next stage or save
-      if (currentStageIdx < stageKeys.length - 1) {
-        setCurrentStageIdx((prev) => prev + 1);
-      } else {
-        // All stages done — save the plan
-        savePlan(updated);
-      }
-    },
-    [acceptedCards, currentStageIdx, stageKeys]
-  );
-
-  const handleReshuffle = useCallback(async () => {
-    if (reshufflesLeft <= 0 || !moodProfile || !selectedCity) return;
-
-    const stageKey = stageKeys[currentStageIdx];
-    const [day, stage] = stageKey.split("-").map(Number);
-
-    setReshuffleLoading(true);
-    try {
-      const res = await fetch("/api/ai/cards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          city: selectedCity.name,
-          country: selectedCity.country,
-          moodProfile,
-          dayNumber: day,
-          stageOrder: stage,
-          durationMin,
-          dateFrom,
-          dateTo,
-          language: "italiano",
-          excludePoiIds: [],
-        }),
-      });
-
-      if (!res.ok) throw new Error("Reshuffle failed");
-      const newCards: GeneratedCard[] = await res.json();
-
-      // Replace cards for this stage
-      const tagged: DraftCard[] = newCards.map((c) => ({
-        ...c,
-        day_number: day,
-        stage_order: stage,
-      }));
-
-      setAllCards((prev) => [
-        ...prev.filter((c) => !(c.day_number === day && c.stage_order === stage)),
-        ...tagged,
-      ]);
-      setReshufflesLeft((prev) => prev - 1);
-    } catch {
-      setError("Errore nel reshuffle");
-    } finally {
-      setReshuffleLoading(false);
-    }
-  }, [reshufflesLeft, moodProfile, selectedCity, stageKeys, currentStageIdx, durationMin, dateFrom, dateTo]);
-
-  const savePlan = async (cards: DraftCard[]) => {
-    if (!selectedCity) return;
-    setStep("saving");
-
-    try {
-      const res = await fetch("/api/plans", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          city: selectedCity.name,
-          title: planTitle,
-          coverImageUrl,
-          dateFrom,
-          dateTo,
-          numStagesPerDay: stagesPerDay,
-          avgStageDurationMin: durationMin,
-          cards,
-        }),
-      });
-
-      if (!res.ok) throw new Error("Errore nel salvataggio");
-      const data = await res.json();
-      router.push(`/plan/${data.plan.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Errore sconosciuto");
-      setStep("drafting");
-    }
-  };
-
-  // Fallback cities if DB is not available
-  const cityList = cities.length > 0 ? cities : [
-    { id: "1", name: "Roma", country: "Italia", lat: 41.9, lon: 12.5, image_url: null },
-    { id: "2", name: "Milano", country: "Italia", lat: 45.5, lon: 9.2, image_url: null },
-    { id: "3", name: "Napoli", country: "Italia", lat: 40.9, lon: 14.3, image_url: null },
-    { id: "4", name: "Firenze", country: "Italia", lat: 43.8, lon: 11.3, image_url: null },
-    { id: "5", name: "Venezia", country: "Italia", lat: 45.4, lon: 12.3, image_url: null },
-    { id: "6", name: "Torino", country: "Italia", lat: 45.1, lon: 7.7, image_url: null },
-    { id: "7", name: "Bologna", country: "Italia", lat: 44.5, lon: 11.3, image_url: null },
-    { id: "8", name: "Palermo", country: "Italia", lat: 38.1, lon: 13.4, image_url: null },
-    { id: "9", name: "Barcellona", country: "Spagna", lat: 41.4, lon: 2.2, image_url: null },
-    { id: "10", name: "Parigi", country: "Francia", lat: 48.9, lon: 2.4, image_url: null },
-    { id: "11", name: "Londra", country: "Regno Unito", lat: 51.5, lon: -0.1, image_url: null },
-    { id: "12", name: "Amsterdam", country: "Paesi Bassi", lat: 52.4, lon: 4.9, image_url: null },
-  ];
-
-  const currentStageKey = stageKeys[currentStageIdx];
-  const currentStageCards = currentStageKey ? cardsForStage(currentStageKey) : [];
-  const [currentDay, currentStage] = currentStageKey
-    ? currentStageKey.split("-").map(Number)
-    : [0, 0];
+    const data = await res.json();
+    localStorage.setItem("dt_planning", JSON.stringify({
+      session_token: data.session_token,
+      city_id: cityId,
+      date_from: dateFrom,
+      date_to: dateTo,
+      stops_per_day: stopsPerDay,
+      stop_duration: stopDuration,
+      num_days: data.num_days,
+      total_stops: data.total_stops,
+      current_stop_index: 0,
+      picks: [],
+      reshuffle_count: 0,
+    }));
+    localStorage.removeItem(DRAFT_KEY);
+    router.push("/plan/draft");
+  }
 
   return (
-    <div className="flex flex-col items-center min-h-[calc(100vh-8rem)] px-4 py-8 max-w-lg mx-auto">
-      <h1 className="text-2xl font-bold mb-2">Crea un nuovo piano</h1>
-      <p className="text-foreground/50 mb-8 text-center">L&apos;AI genererà un mazzo di carte personalizzato</p>
+    <div className="max-w-lg mx-auto px-4 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold mb-1">Pianifica il viaggio</h1>
+        <p className="text-foreground/50 text-sm">Scegli dove e quando. Poi componiamo il mazzo insieme.</p>
+      </div>
 
-      <AnimatePresence mode="wait">
-        {/* Step 1: City */}
-        {step === "city" && (
-          <motion.div key="city" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="w-full">
-            <div className="flex items-center gap-2 text-sm text-foreground/50 mb-4">
-              <MapPin size={16} /> Scegli la città
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {cityList.map((c) => (
+      {loadingCities ? (
+        <div className="flex justify-center py-20"><Loader2 className="animate-spin text-primary" size={28} /></div>
+      ) : (
+        <motion.form
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-5"
+        >
+          {/* ── City selector ── */}
+          <div className="glass rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground/60">
+                <MapPin size={16} /> Città
+              </label>
+              {cities.find(c => c.id === cityId)?.audio_url && (
                 <button
-                  key={c.name}
-                  onClick={() => { setSelectedCity(c); setStep("dates"); }}
-                  className={`p-4 rounded-xl glass border text-left transition-all hover:border-primary/50 ${
-                    selectedCity?.name === c.name ? "border-primary bg-primary/10" : "border-glass-border"
-                  }`}
+                  type="button"
+                  onClick={toggleMute}
+                  className="flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground/70 transition-colors"
+                  title={muted ? "Riattiva musica" : "Silenzia musica"}
                 >
-                  <p className="font-semibold">{c.name}</p>
-                  <p className="text-xs text-foreground/40">{c.country}</p>
+                  {muted ? <VolumeX size={14} /> : <Volume2 size={14} className="text-primary/70" />}
+                  <span className="hidden sm:inline">{muted ? "Audio off" : "Audio on"}</span>
+                </button>
+              )}
+            </div>
+
+            {cities.length > 4 && (
+              <div className="relative mb-3">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/30" />
+                <input
+                  type="text"
+                  placeholder="Cerca città…"
+                  value={citySearch}
+                  onChange={e => setCitySearch(e.target.value)}
+                  className="w-full bg-white/5 border border-glass-border rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-0.5">
+              {filteredCities.map(c => {
+                const photo = c.cover_url ?? null;
+                const selected = cityId === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCityId(c.id)}
+                    className={`relative rounded-xl overflow-hidden h-28 text-left transition-all border-2 ${
+                      selected ? "border-primary shadow-lg shadow-primary/30" : "border-transparent hover:border-primary/40"
+                    }`}
+                  >
+                    {photo ? (
+                      <Image src={photo} alt={c.name} fill sizes="180px" className="object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 bg-white/5" />
+                    )}
+                    {/* gradient overlay */}
+                    <div className={`absolute inset-0 bg-gradient-to-t ${
+                      selected ? "from-primary/90 via-black/40" : "from-black/70 via-black/20"
+                    } to-transparent`} />
+                    {/* name */}
+                    <div className="absolute bottom-0 left-0 right-0 p-2.5">
+                      <p className="text-xs font-bold text-white leading-tight truncate">{c.name}</p>
+                      <p className="text-[10px] text-white/60 leading-tight truncate">{c.country}</p>
+                    </div>
+                    {selected && (
+                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.5 2.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+              {filteredCities.length === 0 && (
+                <p className="col-span-2 text-center text-sm text-foreground/30 py-4">Nessuna città trovata</p>
+              )}
+            </div>
+          </div>
+
+          {/* ── Date range picker ── */}
+          <div className="glass rounded-xl p-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground/60 mb-3">
+              <Calendar size={16} /> Periodo
+            </label>
+
+            <div className="grid grid-cols-2 gap-3 mb-0">
+              {(["from", "to"] as const).map(field => {
+                const isOpen = calOpen === field;
+                const val = field === "from" ? dateFrom : dateTo;
+                return (
+                  <button
+                    key={field}
+                    type="button"
+                    onClick={() => setCalOpen(isOpen ? null : field)}
+                    className={`flex flex-col items-start px-3 py-2.5 rounded-xl border transition-all text-left ${
+                      isOpen
+                        ? "border-primary/70 bg-primary/10"
+                        : val
+                        ? "border-glass-border hover:border-primary/40 bg-white/5"
+                        : "border-glass-border border-dashed hover:border-primary/40"
+                    }`}
+                  >
+                    <span className="text-xs text-foreground/40 mb-0.5">{field === "from" ? "Dal" : "Al"}</span>
+                    <span className={`text-sm font-semibold ${val ? "text-foreground" : "text-foreground/25"}`}>
+                      {val ? formatDate(val) : "— —"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <AnimatePresence>
+              {calOpen && (
+                <motion.div
+                  key={calOpen}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.15 }}
+                  className="mt-3"
+                >
+                  <CalendarPicker
+                    value={calOpen === "from" ? dateFrom : dateTo}
+                    minStr={calOpen === "from" ? today : (dateFrom || today)}
+                    rangeStart={dateFrom}
+                    rangeEnd={dateTo}
+                    onSelect={(val) => {
+                      if (calOpen === "from") {
+                        setDateFrom(val);
+                        if (!dateTo || val > dateTo) setDateTo(val);
+                        setCalOpen("to");
+                      } else {
+                        setDateTo(val);
+                        setCalOpen(null);
+                      }
+                    }}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Stops per day ── */}
+          <div className="glass rounded-xl p-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground/60 mb-3">
+              <Layers size={16} /> Tappe al giorno
+            </label>
+            <div className="flex items-center gap-4">
+              <button type="button" onClick={() => setStopsPerDay((s) => Math.max(1, s - 1))}
+                className="w-10 h-10 rounded-xl glass border border-glass-border flex items-center justify-center hover:border-primary/50 transition-colors">
+                <ChevronLeft size={20} />
+              </button>
+              <span className="text-2xl font-bold w-8 text-center">{stopsPerDay}</span>
+              <button type="button" onClick={() => setStopsPerDay((s) => Math.min(4, s + 1))}
+                className="w-10 h-10 rounded-xl glass border border-glass-border flex items-center justify-center hover:border-primary/50 transition-colors">
+                <ChevronRight size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* ── Stop duration ── */}
+          <div className="glass rounded-xl p-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground/60 mb-3">
+              <Clock size={16} /> Durata per tappa
+            </label>
+            <div className="flex gap-2">
+              {DURATIONS.map(({ value, label }) => (
+                <button key={value} type="button" onClick={() => setStopDuration(value)}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    stopDuration === value ? "bg-primary text-white" : "glass border border-glass-border text-foreground/60 hover:border-primary/40"
+                  }`}>
+                  {label}
                 </button>
               ))}
             </div>
-          </motion.div>
-        )}
+          </div>
 
-        {/* Step 2: Dates */}
-        {step === "dates" && (
-          <motion.div key="dates" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="w-full">
-            <div className="flex items-center gap-2 text-sm text-foreground/50 mb-4">
-              <Calendar size={16} /> Periodo del viaggio
+          {dateFrom && dateTo && (
+            <div className="glass rounded-xl px-4 py-3 text-sm text-foreground/60">
+              {(() => {
+                const days = Math.max(1, Math.round((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000) + 1);
+                return `${days} ${days === 1 ? "giorno" : "giorni"} · ${days * stopsPerDay} tappe totali`;
+              })()}
             </div>
-            <div className="glass rounded-xl p-6 flex flex-col gap-4">
-              <div>
-                <label className="text-sm text-foreground/60 mb-1 block">Da</label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-full p-3 rounded-lg bg-white/5 border border-glass-border text-foreground"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-foreground/60 mb-1 block">A</label>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full p-3 rounded-lg bg-white/5 border border-glass-border text-foreground"
-                />
-              </div>
-              <div className="flex gap-3 mt-2">
-                <button onClick={() => setStep("city")} className="px-4 py-2 rounded-xl text-foreground/50 hover:text-foreground">
-                  Indietro
-                </button>
-                <button
-                  onClick={() => setStep("config")}
-                  disabled={!dateFrom || !dateTo}
-                  className="flex-1 py-3 rounded-xl bg-primary text-white font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
-                >
-                  Avanti
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
+          )}
 
-        {/* Step 3: Config */}
-        {step === "config" && (
-          <motion.div key="config" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="w-full">
-            <div className="flex items-center gap-2 text-sm text-foreground/50 mb-4">
-              <Layers size={16} /> Configura le tappe
-            </div>
-            <div className="glass rounded-xl p-6 flex flex-col gap-5">
-              <div>
-                <label className="text-sm text-foreground/60 mb-2 block">
-                  Tappe per giorno: <span className="text-primary font-semibold">{stagesPerDay}</span>
-                </label>
-                <input
-                  type="range"
-                  min={1}
-                  max={6}
-                  value={stagesPerDay}
-                  onChange={(e) => setStagesPerDay(Number(e.target.value))}
-                  className="w-full accent-primary"
-                />
-                <div className="flex justify-between text-xs text-foreground/30 mt-1">
-                  <span>1</span><span>6</span>
-                </div>
-              </div>
-              <div>
-                <label className="text-sm text-foreground/60 mb-2 block">
-                  Durata media tappa: <span className="text-primary font-semibold">{durationMin} min</span>
-                </label>
-                <input
-                  type="range"
-                  min={30}
-                  max={180}
-                  step={15}
-                  value={durationMin}
-                  onChange={(e) => setDurationMin(Number(e.target.value))}
-                  className="w-full accent-primary"
-                />
-                <div className="flex justify-between text-xs text-foreground/30 mt-1">
-                  <span>30 min</span><span>3 ore</span>
-                </div>
-              </div>
+          {error && <p className="text-danger text-sm">{error}</p>}
 
-              {error && <p className="text-sm text-danger">{error}</p>}
-
-              <div className="flex gap-3 mt-2">
-                <button onClick={() => setStep("dates")} className="px-4 py-2 rounded-xl text-foreground/50 hover:text-foreground">
-                  Indietro
-                </button>
-                <button
-                  onClick={handleGenerate}
-                  className="flex-1 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-light transition-colors flex items-center justify-center gap-2"
-                >
-                  <Sparkles size={18} />
-                  Genera il mazzo
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Generating with progress */}
-        {step === "generating" && (
-          <motion.div key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-6 py-20 w-full">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            >
-              <Loader2 size={48} className="text-primary" />
-            </motion.div>
-            <div className="text-center">
-              <p className="text-lg font-semibold mb-1">L&apos;AI sta creando il tuo mazzo...</p>
-              <p className="text-sm text-foreground/50">{progressMsg}</p>
-            </div>
-            <div className="w-full max-w-xs">
-              <div className="w-full h-2 rounded-full bg-white/10">
-                <motion.div
-                  className="h-full rounded-full bg-primary"
-                  animate={{ width: `${progressPct}%` }}
-                  transition={{ duration: 0.3 }}
-                />
-              </div>
-              <p className="text-xs text-foreground/30 text-center mt-2">{progressPct}%</p>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Drafting */}
-        {step === "drafting" && currentStageKey && (
-          <motion.div
-            key={`draft-${currentStageKey}`}
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -50 }}
-            className="w-full"
-          >
-            {/* Stage progress header */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-sm text-foreground/50">
-                  Giorno {currentDay} — Tappa {currentStage}
-                </p>
-                <p className="text-xs text-foreground/30">
-                  {currentStageIdx + 1} di {stageKeys.length} tappe
-                </p>
-              </div>
-              <div className="flex gap-1">
-                {stageKeys.map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-2 h-2 rounded-full transition-colors ${
-                      i < currentStageIdx
-                        ? "bg-success"
-                        : i === currentStageIdx
-                        ? "bg-primary"
-                        : "bg-white/10"
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <h2 className="text-lg font-semibold mb-1 text-center">Scegli la tua carta</h2>
-            <p className="text-sm text-foreground/40 text-center mb-5">
-              Scopri le carte, scarta quelle che non vuoi, scegli la migliore
-            </p>
-
-            {error && (
-              <p className="text-sm text-danger text-center mb-4">{error}</p>
-            )}
-
-            <DraftingDeck
-              cards={currentStageCards}
-              reshufflesLeft={reshufflesLeft}
-              maxReshuffles={MAX_RESHUFFLES}
-              onAccept={handleAcceptCard}
-              onReshuffle={handleReshuffle}
-              loading={reshuffleLoading}
-            />
-          </motion.div>
-        )}
-
-        {/* Saving */}
-        {step === "saving" && (
-          <motion.div key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-6 py-20">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            >
-              <Loader2 size={48} className="text-success" />
-            </motion.div>
-            <div className="text-center">
-              <p className="text-lg font-semibold mb-1">Salvataggio del piano...</p>
-              <p className="text-sm text-foreground/50">
-                {acceptedCards.length} carte selezionate
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          <button type="submit" disabled={loading || !cityId || !dateFrom || !dateTo}
+            className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-base hover:bg-primary-light transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/25 disabled:opacity-50">
+            {loading && <Loader2 size={18} className="animate-spin" />}
+            Inizia ora →
+          </button>
+        </motion.form>
+      )}
     </div>
   );
 }

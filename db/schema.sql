@@ -1,290 +1,273 @@
--- Deck Tour — Schema locale PostgreSQL + PostGIS
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
-CREATE EXTENSION IF NOT EXISTS postgis;
-
--- Enum types
-CREATE TYPE mood_type AS ENUM ('shopping', 'food', 'art', 'nature', 'nightlife');
-CREATE TYPE event_kind AS ENUM ('permanent', 'temporary');
-CREATE TYPE plan_status AS ENUM ('draft', 'published', 'archived');
-CREATE TYPE mission_type AS ENUM ('quiz', 'photo', 'both');
-CREATE TYPE card_rarity AS ENUM ('common', 'rare', 'secret');
-CREATE TYPE session_status AS ENUM ('active', 'completed', 'abandoned');
-
--- Profiles
-CREATE TABLE profiles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  display_name TEXT,
-  email TEXT UNIQUE,
-  avatar_url TEXT,
-  mood_shopping SMALLINT DEFAULT 50 CHECK (mood_shopping BETWEEN 0 AND 100),
-  mood_food SMALLINT DEFAULT 50 CHECK (mood_food BETWEEN 0 AND 100),
-  mood_art SMALLINT DEFAULT 50 CHECK (mood_art BETWEEN 0 AND 100),
-  mood_nature SMALLINT DEFAULT 50 CHECK (mood_nature BETWEEN 0 AND 100),
-  mood_nightlife SMALLINT DEFAULT 50 CHECK (mood_nightlife BETWEEN 0 AND 100),
-  total_score INTEGER DEFAULT 0,
-  badges JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE public.badges (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  code text NOT NULL UNIQUE,
+  label text NOT NULL,
+  description text NOT NULL,
+  icon_url text,
+  CONSTRAINT badges_pkey PRIMARY KEY (id)
 );
-
--- Cities
-CREATE TABLE cities (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  country TEXT NOT NULL,
-  location GEOGRAPHY(Point, 4326) NOT NULL,
-  image_url TEXT
+CREATE TABLE public.cards (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  city_id uuid NOT NULL,
+  title text NOT NULL,
+  story text NOT NULL,
+  rarity text NOT NULL DEFAULT 'common'::text CHECK (rarity = ANY (ARRAY['common'::text, 'rare'::text, 'secret'::text])),
+  challenge_type text NOT NULL DEFAULT 'scelta_multipla'::text CHECK (challenge_type = ANY (ARRAY['scelta_multipla'::text, 'quiz'::text, 'enigma'::text, 'mini_enigma'::text, 'osservazione'::text, 'interazione_contestuale'::text])),
+  challenge_content jsonb NOT NULL,
+  mood_tags ARRAY NOT NULL DEFAULT '{}'::text[],
+  is_temporary boolean NOT NULL DEFAULT false,
+  valid_from date,
+  valid_until date,
+  lat double precision NOT NULL,
+  lon double precision NOT NULL,
+  photo_url text,
+  base_points integer NOT NULL DEFAULT 100,
+  voucher_text text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT cards_pkey PRIMARY KEY (id),
+  CONSTRAINT cards_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
 );
-
-CREATE INDEX idx_cities_location ON cities USING GIST (location);
-
--- Convenience view to expose lat/lon
-CREATE OR REPLACE VIEW cities_view AS
-  SELECT id, name, country, image_url,
-    ST_Y(location::geometry) AS lat,
-    ST_X(location::geometry) AS lon
-  FROM cities;
-
--- POIs
-CREATE TABLE pois (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  city_id UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  location GEOGRAPHY(Point, 4326) NOT NULL,
-  image_url TEXT,
-  moods mood_type[] DEFAULT '{}',
-  event_kind event_kind DEFAULT 'permanent',
-  valid_from DATE,
-  valid_to DATE,
-  source_url TEXT,
-  source_name TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE public.checkins (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL,
+  card_id uuid NOT NULL,
+  player_id uuid NOT NULL,
+  player_location USER-DEFINED NOT NULL,
+  distance_meters double precision NOT NULL,
+  location_valid boolean DEFAULT false,
+  location_exact boolean DEFAULT false,
+  quiz_answers jsonb DEFAULT '[]'::jsonb,
+  quiz_correct integer DEFAULT 0,
+  quiz_total integer DEFAULT 0,
+  hints_revealed smallint DEFAULT 1 CHECK (hints_revealed >= 1 AND hints_revealed <= 3),
+  photo_url text,
+  score_earned integer DEFAULT 0,
+  voucher_unlocked boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT checkins_pkey PRIMARY KEY (id),
+  CONSTRAINT checkins_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.profiles(id)
 );
-
-CREATE INDEX idx_pois_location ON pois USING GIST (location);
-CREATE INDEX idx_pois_city ON pois (city_id);
-
--- Plans
-CREATE TABLE plans (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  creator_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  city_id UUID NOT NULL REFERENCES cities(id),
-  title TEXT NOT NULL,
-  description TEXT,
-  image_url TEXT,
-  status plan_status DEFAULT 'draft',
-  date_from DATE NOT NULL,
-  date_to DATE NOT NULL,
-  num_stages INTEGER DEFAULT 3,
-  avg_stage_duration_min INTEGER DEFAULT 90,
-  avg_rating NUMERIC(2,1) DEFAULT 0,
-  total_reviews INTEGER DEFAULT 0,
-  total_executions INTEGER DEFAULT 0,
-  power_level INTEGER DEFAULT 0,
-  total_score INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE public.cities (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  name text NOT NULL,
+  country text NOT NULL,
+  country_code text NOT NULL,
+  lat double precision NOT NULL,
+  lon double precision NOT NULL,
+  is_active boolean NOT NULL DEFAULT false,
+  cover_url text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  audio_url text,
+  CONSTRAINT cities_pkey PRIMARY KEY (id)
 );
-
--- Cards
-CREATE TABLE cards (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-  poi_id UUID REFERENCES pois(id),
-  day_number INTEGER NOT NULL DEFAULT 1,
-  stage_order INTEGER NOT NULL DEFAULT 1,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  moods mood_type[] DEFAULT '{}',
-  image_url TEXT,
-  location GEOGRAPHY(Point, 4326) NOT NULL,
-  duration_min INTEGER DEFAULT 90,
-  mission_type mission_type DEFAULT 'quiz',
-  quiz_data JSONB DEFAULT '[]',
-  hint_hard TEXT DEFAULT '',
-  hint_medium TEXT DEFAULT '',
-  hint_easy TEXT DEFAULT '',
-  historical_info TEXT DEFAULT '',
-  rarity card_rarity DEFAULT 'common',
-  power_level INTEGER DEFAULT 1,
-  base_score INTEGER DEFAULT 100,
-  voucher_description TEXT,
-  voucher_partner TEXT,
-  voucher_code TEXT,
-  voucher_validity_radius INTEGER DEFAULT 500,
-  is_temporary_event BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE public.game_sessions (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  plan_id uuid NOT NULL,
+  explorer_id uuid NOT NULL,
+  session_code text NOT NULL UNIQUE,
+  mode text NOT NULL DEFAULT 'solo'::text CHECK (mode = ANY (ARRAY['solo'::text, 'co-op'::text])),
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'completed'::text, 'abandoned'::text])),
+  current_card_index integer NOT NULL DEFAULT 0,
+  total_score integer NOT NULL DEFAULT 0,
+  started_at timestamp with time zone NOT NULL DEFAULT now(),
+  completed_at timestamp with time zone,
+  CONSTRAINT game_sessions_pkey PRIMARY KEY (id),
+  CONSTRAINT game_sessions_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id),
+  CONSTRAINT game_sessions_explorer_id_fkey FOREIGN KEY (explorer_id) REFERENCES auth.users(id)
 );
-
-CREATE INDEX idx_cards_location ON cards USING GIST (location);
-CREATE INDEX idx_cards_plan ON cards (plan_id);
-
--- Game Sessions
-CREATE TABLE game_sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  player_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-  status session_status DEFAULT 'active',
-  total_score INTEGER DEFAULT 0,
-  started_at TIMESTAMPTZ DEFAULT now(),
-  completed_at TIMESTAMPTZ
+CREATE TABLE public.leaderboard_plans (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  plan_id uuid NOT NULL,
+  month text NOT NULL,
+  times_played integer NOT NULL DEFAULT 0,
+  avg_score double precision NOT NULL DEFAULT 0,
+  CONSTRAINT leaderboard_plans_pkey PRIMARY KEY (id),
+  CONSTRAINT leaderboard_plans_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id)
 );
-
--- Check-ins
-CREATE TABLE checkins (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id UUID NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
-  card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-  player_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  player_location GEOGRAPHY(Point, 4326) NOT NULL,
-  distance_meters DOUBLE PRECISION NOT NULL,
-  location_valid BOOLEAN DEFAULT FALSE,
-  location_exact BOOLEAN DEFAULT FALSE,
-  quiz_answers JSONB DEFAULT '[]',
-  quiz_correct INTEGER DEFAULT 0,
-  quiz_total INTEGER DEFAULT 0,
-  hints_revealed SMALLINT DEFAULT 1 CHECK (hints_revealed BETWEEN 1 AND 3),
-  photo_url TEXT,
-  score_earned INTEGER DEFAULT 0,
-  voucher_unlocked BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE public.leaderboard_users (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  month text NOT NULL,
+  monthly_points integer NOT NULL DEFAULT 0,
+  total_points integer NOT NULL DEFAULT 0,
+  CONSTRAINT leaderboard_users_pkey PRIMARY KEY (id),
+  CONSTRAINT leaderboard_users_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-
--- Reviews
-CREATE TABLE reviews (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-  reviewer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  stars SMALLINT NOT NULL CHECK (stars BETWEEN 1 AND 5),
-  comment TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE (plan_id, reviewer_id)
+CREATE TABLE public.partners (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  city_id uuid NOT NULL,
+  name text NOT NULL,
+  category text NOT NULL,
+  lat double precision NOT NULL,
+  lon double precision NOT NULL,
+  is_active boolean NOT NULL DEFAULT true,
+  CONSTRAINT partners_pkey PRIMARY KEY (id),
+  CONSTRAINT partners_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
 );
-
--- ============================================================
--- Spatial helper: find nearby POIs
--- ============================================================
-CREATE OR REPLACE FUNCTION nearby_pois(
-  search_lat DOUBLE PRECISION,
-  search_lon DOUBLE PRECISION,
-  radius_meters DOUBLE PRECISION DEFAULT 5000,
-  lim INTEGER DEFAULT 50
-)
-RETURNS TABLE(
-  id UUID, name TEXT, description TEXT,
-  lat DOUBLE PRECISION, lon DOUBLE PRECISION,
-  distance_m DOUBLE PRECISION,
-  moods mood_type[], event_kind event_kind
-) AS $$
-  SELECT
-    p.id, p.name, p.description,
-    ST_Y(p.location::geometry) AS lat,
-    ST_X(p.location::geometry) AS lon,
-    ST_Distance(p.location, ST_SetSRID(ST_MakePoint(search_lon, search_lat), 4326)::geography) AS distance_m,
-    p.moods, p.event_kind
-  FROM pois p
-  WHERE ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(search_lon, search_lat), 4326)::geography, radius_meters)
-  ORDER BY distance_m
-  LIMIT lim;
-$$ LANGUAGE sql STABLE;
-
--- ============================================================
--- Spatial helper: distance between player and card
--- ============================================================
-CREATE OR REPLACE FUNCTION check_in_distance(
-  player_lat DOUBLE PRECISION, player_lon DOUBLE PRECISION,
-  card_id_param UUID
-)
-RETURNS DOUBLE PRECISION AS $$
-  SELECT ST_Distance(
-    ST_SetSRID(ST_MakePoint(player_lon, player_lat), 4326)::geography,
-    c.location
-  )
-  FROM cards c WHERE c.id = card_id_param;
-$$ LANGUAGE sql STABLE;
-
--- ============================================================
--- Triggers
--- ============================================================
-
--- Update scores on checkin
-CREATE OR REPLACE FUNCTION on_checkin_score() RETURNS TRIGGER AS $$
-BEGIN
-  UPDATE game_sessions SET total_score = total_score + NEW.score_earned WHERE id = NEW.session_id;
-  UPDATE profiles SET total_score = total_score + NEW.score_earned WHERE id = NEW.player_id;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_checkin_score AFTER INSERT ON checkins
-  FOR EACH ROW EXECUTE FUNCTION on_checkin_score();
-
--- Recalculate plan power_level when cards change
-CREATE OR REPLACE FUNCTION on_card_power_level() RETURNS TRIGGER AS $$
-BEGIN
-  UPDATE plans SET power_level = (
-    SELECT COALESCE(SUM(power_level), 0) FROM cards WHERE plan_id = NEW.plan_id
-  ) WHERE id = NEW.plan_id;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_card_power_level AFTER INSERT OR UPDATE OR DELETE ON cards
-  FOR EACH ROW EXECUTE FUNCTION on_card_power_level();
-
--- Update plan stats on review
-CREATE OR REPLACE FUNCTION on_review_update_plan() RETURNS TRIGGER AS $$
-BEGIN
-  UPDATE plans SET
-    avg_rating = (SELECT COALESCE(AVG(stars), 0) FROM reviews WHERE plan_id = NEW.plan_id),
-    total_reviews = (SELECT COUNT(*) FROM reviews WHERE plan_id = NEW.plan_id)
-  WHERE id = NEW.plan_id;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_review_update AFTER INSERT OR UPDATE ON reviews
-  FOR EACH ROW EXECUTE FUNCTION on_review_update_plan();
-
--- ============================================================
--- Views
--- ============================================================
-
-CREATE OR REPLACE VIEW leaderboard_users AS
-  SELECT id, display_name, avatar_url, total_score,
-    RANK() OVER (ORDER BY total_score DESC) AS rank
-  FROM profiles
-  WHERE total_score > 0;
-
-CREATE OR REPLACE VIEW leaderboard_plans AS
-  SELECT p.id, p.title, p.image_url, p.total_executions, p.avg_rating, p.total_reviews,
-    p.power_level,
-    c.name AS city_name, c.country,
-    pr.display_name AS creator_name, pr.avatar_url AS creator_avatar,
-    RANK() OVER (ORDER BY p.power_level DESC, p.total_executions DESC) AS rank
-  FROM plans p
-  JOIN cities c ON c.id = p.city_id
-  JOIN profiles pr ON pr.id = p.creator_id
-  WHERE p.status = 'published';
-
--- ============================================================
--- Seed cities
--- ============================================================
-INSERT INTO cities (name, country, location) VALUES
-  ('Roma',       'Italia',       ST_SetSRID(ST_MakePoint(12.4964, 41.9028), 4326)::geography),
-  ('Milano',     'Italia',       ST_SetSRID(ST_MakePoint(9.1900, 45.4642), 4326)::geography),
-  ('Napoli',     'Italia',       ST_SetSRID(ST_MakePoint(14.2681, 40.8518), 4326)::geography),
-  ('Firenze',    'Italia',       ST_SetSRID(ST_MakePoint(11.2558, 43.7696), 4326)::geography),
-  ('Venezia',    'Italia',       ST_SetSRID(ST_MakePoint(12.3155, 45.4408), 4326)::geography),
-  ('Torino',     'Italia',       ST_SetSRID(ST_MakePoint(7.6869, 45.0703), 4326)::geography),
-  ('Bologna',    'Italia',       ST_SetSRID(ST_MakePoint(11.3426, 44.4949), 4326)::geography),
-  ('Palermo',    'Italia',       ST_SetSRID(ST_MakePoint(13.3615, 38.1157), 4326)::geography),
-  ('Barcellona', 'Spagna',      ST_SetSRID(ST_MakePoint(2.1686, 41.3874), 4326)::geography),
-  ('Parigi',     'Francia',      ST_SetSRID(ST_MakePoint(2.3522, 48.8566), 4326)::geography),
-  ('Londra',     'Regno Unito',  ST_SetSRID(ST_MakePoint(-0.1278, 51.5074), 4326)::geography),
-  ('Amsterdam',  'Paesi Bassi',  ST_SetSRID(ST_MakePoint(4.9041, 52.3676), 4326)::geography);
-
--- Default demo profile
-INSERT INTO profiles (id, display_name, email) VALUES
-  ('00000000-0000-0000-0000-000000000001', 'Demo Player', 'demo@decktour.dev');
+CREATE TABLE public.plan_day_cards (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  plan_day_id uuid NOT NULL,
+  card_id uuid NOT NULL,
+  position integer NOT NULL,
+  CONSTRAINT plan_day_cards_pkey PRIMARY KEY (id),
+  CONSTRAINT plan_day_cards_plan_day_id_fkey FOREIGN KEY (plan_day_id) REFERENCES public.plan_days(id),
+  CONSTRAINT plan_day_cards_card_id_fkey FOREIGN KEY (card_id) REFERENCES public.cards(id)
+);
+CREATE TABLE public.plan_days (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  plan_id uuid NOT NULL,
+  day_number integer NOT NULL,
+  title text,
+  CONSTRAINT plan_days_pkey PRIMARY KEY (id),
+  CONSTRAINT plan_days_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id)
+);
+CREATE TABLE public.plan_reviews (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  plan_id uuid NOT NULL,
+  session_id uuid NOT NULL,
+  reviewer_id uuid NOT NULL,
+  stars integer NOT NULL CHECK (stars >= 1 AND stars <= 5),
+  description text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT plan_reviews_pkey PRIMARY KEY (id),
+  CONSTRAINT plan_reviews_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id),
+  CONSTRAINT plan_reviews_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.game_sessions(id),
+  CONSTRAINT plan_reviews_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.planning_sessions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  city_id uuid NOT NULL,
+  date_from date NOT NULL,
+  date_to date NOT NULL,
+  stops_per_day integer NOT NULL DEFAULT 2,
+  stop_duration text NOT NULL DEFAULT '2h'::text,
+  num_days integer NOT NULL DEFAULT 1,
+  total_stops integer NOT NULL DEFAULT 2,
+  deck jsonb NOT NULL DEFAULT '[]'::jsonb,
+  picks jsonb NOT NULL DEFAULT '[]'::jsonb,
+  current_trio jsonb,
+  reshuffle_count integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  expires_at timestamp with time zone NOT NULL DEFAULT (now() + '24:00:00'::interval),
+  CONSTRAINT planning_sessions_pkey PRIMARY KEY (id),
+  CONSTRAINT planning_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT planning_sessions_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
+);
+CREATE TABLE public.plans (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  city_id uuid NOT NULL,
+  creator_id uuid NOT NULL,
+  title text NOT NULL,
+  diary_blurred text,
+  diary_revealed text,
+  moods_summary jsonb,
+  valid_from date,
+  valid_until date,
+  num_days integer NOT NULL DEFAULT 1,
+  stops_per_day integer NOT NULL DEFAULT 2,
+  stop_duration text NOT NULL DEFAULT '2h'::text,
+  is_published boolean NOT NULL DEFAULT false,
+  avg_rating double precision NOT NULL DEFAULT 0,
+  times_played integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT plans_pkey PRIMARY KEY (id),
+  CONSTRAINT plans_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
+  CONSTRAINT plans_creator_id_fkey FOREIGN KEY (creator_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.player_profiles (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL UNIQUE,
+  mood_art integer NOT NULL DEFAULT 50 CHECK (mood_art >= 0 AND mood_art <= 100),
+  mood_food integer NOT NULL DEFAULT 50 CHECK (mood_food >= 0 AND mood_food <= 100),
+  mood_nature integer NOT NULL DEFAULT 50 CHECK (mood_nature >= 0 AND mood_nature <= 100),
+  mood_shopping integer NOT NULL DEFAULT 50 CHECK (mood_shopping >= 0 AND mood_shopping <= 100),
+  mood_nightlife integer NOT NULL DEFAULT 50 CHECK (mood_nightlife >= 0 AND mood_nightlife <= 100),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  display_name text,
+  avatar_url text,
+  CONSTRAINT player_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT player_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.pois (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  city_id uuid NOT NULL,
+  name text NOT NULL,
+  description text NOT NULL DEFAULT ''::text,
+  location USER-DEFINED NOT NULL,
+  image_url text,
+  moods ARRAY DEFAULT '{}'::mood_type[],
+  event_kind USER-DEFINED DEFAULT 'permanent'::event_kind,
+  valid_from date,
+  valid_to date,
+  source_url text,
+  source_name text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT pois_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.profiles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  display_name text,
+  email text UNIQUE,
+  avatar_url text,
+  mood_shopping smallint DEFAULT 50 CHECK (mood_shopping >= 0 AND mood_shopping <= 100),
+  mood_food smallint DEFAULT 50 CHECK (mood_food >= 0 AND mood_food <= 100),
+  mood_art smallint DEFAULT 50 CHECK (mood_art >= 0 AND mood_art <= 100),
+  mood_nature smallint DEFAULT 50 CHECK (mood_nature >= 0 AND mood_nature <= 100),
+  mood_nightlife smallint DEFAULT 50 CHECK (mood_nightlife >= 0 AND mood_nightlife <= 100),
+  total_score integer DEFAULT 0,
+  badges jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT profiles_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.reviews (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  plan_id uuid NOT NULL,
+  reviewer_id uuid NOT NULL,
+  stars smallint NOT NULL CHECK (stars >= 1 AND stars <= 5),
+  comment text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT reviews_pkey PRIMARY KEY (id),
+  CONSTRAINT reviews_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.session_card_progress (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  session_id uuid NOT NULL,
+  card_id uuid NOT NULL,
+  day_number integer NOT NULL,
+  position integer NOT NULL,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'checked_in'::text, 'completed'::text, 'skipped'::text])),
+  checkin_lat double precision,
+  checkin_lon double precision,
+  checkin_time timestamp with time zone,
+  navigator_hint_used boolean NOT NULL DEFAULT false,
+  bonus_intuition boolean NOT NULL DEFAULT false,
+  challenge_answer jsonb,
+  is_correct boolean,
+  points_earned integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT session_card_progress_pkey PRIMARY KEY (id),
+  CONSTRAINT session_card_progress_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.game_sessions(id),
+  CONSTRAINT session_card_progress_card_id_fkey FOREIGN KEY (card_id) REFERENCES public.cards(id)
+);
+CREATE TABLE public.spatial_ref_sys (
+  srid integer NOT NULL CHECK (srid > 0 AND srid <= 998999),
+  auth_name character varying,
+  auth_srid integer,
+  srtext character varying,
+  proj4text character varying,
+  CONSTRAINT spatial_ref_sys_pkey PRIMARY KEY (srid)
+);
+CREATE TABLE public.user_badges (
+  user_id uuid NOT NULL,
+  badge_id uuid NOT NULL,
+  earned_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT user_badges_pkey PRIMARY KEY (user_id, badge_id),
+  CONSTRAINT user_badges_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT user_badges_badge_id_fkey FOREIGN KEY (badge_id) REFERENCES public.badges(id)
+);

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       body.avgStageDurationMin
     );
 
-    const savedCards = await insertCards(plan!.id, body.cards, body.avgStageDurationMin);
+    const savedCards = await insertCards(plan!.id, city.id, body.cards, body.avgStageDurationMin);
 
     // Save cover image if provided by the draft phase
     if (body.coverImageUrl) {
