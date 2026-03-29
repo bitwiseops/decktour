@@ -14,61 +14,68 @@ interface MapPinModalProps {
 
 export function MapPinModal({ cardLat, cardLon, onConfirm, onClose }: MapPinModalProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<unknown>(null);
-  const markerRef = useRef<unknown>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markerRef = useRef<any>(null);
   const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!mapContainer.current || !token) return;
-
+    if (!mapContainer.current) return;
     let cancelled = false;
 
-    import("mapbox-gl").then((mod) => {
+    import("leaflet").then((L) => {
       if (cancelled || !mapContainer.current) return;
+      if (mapRef.current) return;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mapboxgl = (mod as any).default ?? mod;
-      mapboxgl.accessToken = token;
-
-      const map = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: "mapbox://styles/mapbox/dark-v11",
-        center: [cardLon, cardLat],
-        zoom: 13,
-      });
+      const map = L.map(mapContainer.current, { zoomControl: true }).setView(
+        [cardLat, cardLon],
+        15
+      );
       mapRef.current = map;
 
-      map.on("click", (e: { lngLat: { lat: number; lng: number } }) => {
-        const { lng, lat } = e.lngLat;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Cerchio per indicare la posizione del luogo
+      L.circleMarker([cardLat, cardLon], {
+        radius: 12,
+        color: "#6366f1",
+        fillColor: "#6366f1",
+        fillOpacity: 0.25,
+        weight: 2,
+      }).addTo(map);
+
+      map.on("click", (e: L.LeafletMouseEvent) => {
+        const { lat, lng } = e.latlng;
         setPin({ lat, lon: lng });
 
         if (markerRef.current) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (markerRef.current as any).setLngLat([lng, lat]);
+          markerRef.current.setLatLng([lat, lng]);
         } else {
-          const el = document.createElement("div");
-          el.style.cssText =
-            "width:32px;height:32px;border-radius:50%;background:#f59e0b;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;cursor:pointer;";
-          el.innerHTML =
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>';
-          markerRef.current = new mapboxgl.Marker({ element: el })
-            .setLngLat([lng, lat])
-            .addTo(map);
+          const icon = L.divIcon({
+            className: "",
+            html: `<div style="width:28px;height:28px;border-radius:50%;background:#f59e0b;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+          });
+          markerRef.current = L.marker([lat, lng], { icon }).addTo(map);
         }
       });
     });
 
     return () => {
       cancelled = true;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (markerRef.current as any)?.remove();
-      markerRef.current = null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (mapRef.current as any)?.remove();
-      mapRef.current = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+      }
     };
-  }, [cardLat, cardLon]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const distance = pin ? haversineDistance(pin.lat, pin.lon, cardLat, cardLon) : null;
 
@@ -91,18 +98,25 @@ export function MapPinModal({ cardLat, cardLon, onConfirm, onClose }: MapPinModa
       </div>
 
       {/* Map */}
-      <div ref={mapContainer} className="flex-1 w-full" />
+      <div ref={mapContainer} className="flex-1 w-full min-h-0" />
 
       {/* Footer */}
       <div className="px-4 py-4 border-t border-white/10 shrink-0">
         {pin && distance !== null ? (
-          <button
-            onClick={() => onConfirm(pin.lat, pin.lon, distance)}
-            className="w-full py-3 rounded-xl bg-primary text-white font-semibold flex items-center justify-center gap-2"
-          >
-            <CheckCircle size={18} />
-            Conferma posizione
-          </button>
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-center text-foreground/50">
+              {distance < 1000
+                ? `${Math.round(distance)}m dal luogo`
+                : `${(distance / 1000).toFixed(1)}km dal luogo`}
+            </p>
+            <button
+              onClick={() => onConfirm(pin.lat, pin.lon, distance)}
+              className="w-full py-3 rounded-xl bg-primary text-white font-semibold flex items-center justify-center gap-2"
+            >
+              <CheckCircle size={18} />
+              Conferma posizione
+            </button>
+          </div>
         ) : (
           <div className="flex items-center justify-center gap-2 py-3 text-sm text-foreground/40">
             <MapPin size={14} />

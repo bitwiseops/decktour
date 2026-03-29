@@ -18,7 +18,7 @@ export function haversineDistance(
   return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export const CHECK_IN_RADIUS = 500; // meters
+export const CHECK_IN_RADIUS = 200; // meters
 export const EXACT_RADIUS = 100; // meters
 export const EXACT_BONUS = 50;
 export const QUIZ_CORRECT_BONUS = 25;

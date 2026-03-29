@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Trophy, Loader2, Star, BookOpen, Zap, MapPin, Map } from "lucide-react";
+import { ChevronRight, Trophy, Loader2, Star, BookOpen, Zap, MapPin, Map, Eye } from "lucide-react";
 import { CheckInButton } from "@/components/game/CheckInButton";
 import { CountdownTimer } from "@/components/game/CountdownTimer";
 import { QuizModal } from "@/components/game/QuizModal";
@@ -41,8 +41,6 @@ function getPerformanceLabel(score: number, maxScore: number): { label: string; 
 
 // ── HintCard ──────────────────────────────────────────────────────────────────
 function HintCard({ card, hintLevel }: { card: Card; hintLevel: HintLevel }) {
-  const rarityInfo = RARITIES.find((r) => r.id === card.rarity) ?? RARITIES[0];
-
   const visibleHints: { label: string; text: string }[] = [
     { label: HINT_LABELS.hard, text: card.hint_hard },
     ...(hintLevel === "medium" || hintLevel === "easy"
@@ -52,51 +50,19 @@ function HintCard({ card, hintLevel }: { card: Card; hintLevel: HintLevel }) {
   ];
 
   return (
-    <div className="glass rounded-2xl overflow-hidden border" style={{ borderColor: `${rarityInfo.color}40` }}>
-      {card.image_url && (
-        <div className="relative w-full h-40 overflow-hidden">
-          <img src={card.image_url} alt={card.title} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-        </div>
-      )}
-      <div className="p-5 flex flex-col gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            {card.rarity !== "common" && (
-              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ backgroundColor: `${rarityInfo.color}20`, color: rarityInfo.color }}>
-                {rarityInfo.label}
-              </span>
-            )}
+    <div className="glass rounded-2xl p-5 flex flex-col gap-3 border border-white/10">
+      {visibleHints.map((hint, i) => (
+        <motion.div key={hint.label}
+          initial={i > 0 ? { opacity: 0, y: 6 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
+          <MapPin size={16} className="text-accent mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-accent/70 mb-0.5">{hint.label}</p>
+            <p className="text-sm text-foreground/80 italic">&ldquo;{hint.text}&rdquo;</p>
           </div>
-          <h2 className="text-xl font-bold text-white">{card.title}</h2>
-          <div className="flex flex-wrap gap-2 mt-2">
-            {card.moods.map((moodId) => {
-              const mood = MOODS.find((m) => m.id === moodId);
-              return mood ? (
-                <span key={moodId} className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: `${mood.color}20`, color: mood.color }}>
-                  {mood.emoji} {mood.label.split("&")[0].trim()}
-                </span>
-              ) : null;
-            })}
-          </div>
-        </div>
-        <div className="flex flex-col gap-3">
-          {visibleHints.map((hint, i) => (
-            <motion.div key={hint.label}
-              initial={i > 0 ? { opacity: 0, y: 6 } : false}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
-              <MapPin size={16} className="text-accent mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs font-semibold text-accent/70 mb-0.5">{hint.label}</p>
-                <p className="text-sm text-foreground/80 italic">&ldquo;{hint.text}&rdquo;</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
+        </motion.div>
+      ))}
     </div>
   );
 }
@@ -381,7 +347,7 @@ export default function PlayPage() {
               onExpired={handleTimerExpired}
             />
 
-            <GameCard card={currentCard} hintLevel={currentHintLevel} onRevealHint={handleRevealHint} />
+            <HintCard card={currentCard} hintLevel={currentHintLevel} />
 
             {canRevealMore && (
               <button
@@ -389,22 +355,19 @@ export default function PlayPage() {
                 className="self-center flex items-center gap-2 px-4 py-2 rounded-xl glass border border-white/10 text-sm text-foreground/60 hover:text-foreground/80 transition-colors"
               >
                 <Eye size={16} />
-                Rivela indizio piÃ¹ facile
+                Rivela indizio più facile
               </button>
             )}
 
-            {currentCard.historical_info && (
-              <HistoricalInfo info={currentCard.historical_info} />
-            )}
+            <button
+              onClick={() => setShowMapPin(true)}
+              className="w-full py-3 rounded-xl glass border border-white/10 flex items-center justify-center gap-2 text-sm font-semibold text-foreground/70 hover:text-foreground hover:border-primary/40 transition-colors"
+            >
+              <Map size={18} />
+              Spostati sulla mappa
+            </button>
 
-            <GameMap
-              cards={cards}
-              activeCardIndex={currentIndex}
-              playerPosition={position}
-              className="h-[200px]"
-            />
-
-            <div className="flex justify-center py-4">
+            <div className="flex justify-center py-2">
               <CheckInButton
                 targetLat={currentCard.lat}
                 targetLon={currentCard.lon}
@@ -460,6 +423,16 @@ export default function PlayPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Map pin modal – remote check-in */}
+      {showMapPin && currentCard && (
+        <MapPinModal
+          cardLat={currentCard.lat}
+          cardLon={currentCard.lon}
+          onConfirm={handleCheckIn}
+          onClose={() => setShowMapPin(false)}
+        />
+      )}
     </div>
   );
 }
