@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, ImageIcon, ChevronDown, ChevronUp } from "lucide-react";
+import { Play, Calendar, Clock, MapPin, Star, Loader2, Zap, ImageIcon, ChevronDown, ChevronUp, Share2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { MOODS, RARITIES } from "@/lib/types";
 import type { Card } from "@/lib/types";
@@ -22,6 +22,8 @@ interface PlanData {
   power_level: number;
   status: string;
   moods_summary?: Record<string, number> | null;
+  is_published?: boolean;
+  creator_id?: string;
 }
 
 const RARITY_BORDER: Record<string, string> = {
@@ -121,6 +123,8 @@ export default function PlanDetailPage() {
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingCover, setGeneratingCover] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -134,6 +138,7 @@ export default function PlanDetailPage() {
         .then(([planData, cardsData]) => {
           setPlan(planData);
           setCards(Array.isArray(cardsData) ? cardsData : []);
+          if (session?.user?.id && planData?.creator_id === session.user.id) setIsOwner(true);
 
           // Auto-generate cover if missing
           if (planData?.id && !planData.image_url && session?.access_token) {
@@ -244,13 +249,37 @@ export default function PlanDetailPage() {
           <DaySection key={day} day={Number(day)} cards={dayCards} />
         ))}
 
-      {/* Play button */}
+      {/* Publish + Play buttons */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="sticky bottom-20 z-30"
+        className="sticky bottom-20 z-30 flex flex-col gap-2"
       >
+        {isOwner && !plan.is_published && (
+          <button
+            onClick={async () => {
+              setPublishing(true);
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session) return;
+              const res = await fetch(`/api/plans/${params.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                body: JSON.stringify({ is_published: true }),
+              });
+              if (res.ok) setPlan(prev => prev ? { ...prev, is_published: true } : prev);
+              setPublishing(false);
+            }}
+            disabled={publishing}
+            className="w-full py-3.5 rounded-xl bg-accent text-white font-semibold text-base flex items-center justify-center gap-2 shadow-lg shadow-accent/25 hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {publishing ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />}
+            Pubblica nel Marketplace
+          </button>
+        )}
+        {isOwner && plan.is_published && (
+          <p className="text-center text-sm text-success font-medium py-2">Pubblicato nel marketplace</p>
+        )}
         <button
           onClick={() => router.push(`/plan/${params.id}/play`)}
           className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-lg flex items-center justify-center gap-2 shadow-lg shadow-primary/25 hover:bg-primary-light transition-colors"
