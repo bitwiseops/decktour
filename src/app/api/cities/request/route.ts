@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 import { provisionCity } from "@/lib/provision-city";
 
 export async function POST(req: NextRequest) {
@@ -13,7 +13,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "city_name and country are required" }, { status: 400 });
     }
 
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
     const name = city_name.trim();
     const countryTrimmed = country.trim();
 
@@ -72,7 +73,8 @@ export async function GET(req: NextRequest) {
     const user = await getAuthUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
     const { data } = await db
       .from("city_requests")
       .select("id, city_name, country, status, city_id, created_at, processed_at")

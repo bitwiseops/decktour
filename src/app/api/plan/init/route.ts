@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 
 interface InitRequest {
   city_id: string;
@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = (await req.json()) as InitRequest;
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
 
     // Mood profile comes from the request (per-plan, not per-user)
     const moods: Record<string, number> = {

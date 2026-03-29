@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +13,8 @@ export async function POST(req: NextRequest) {
 
     if (stars < 1 || stars > 5) return NextResponse.json({ error: "Stars must be 1-5" }, { status: 400 });
 
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
 
     // Verify session belongs to user
     const { data: sess } = await db

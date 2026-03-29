@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, Edit2, ChevronRight, Volume2, VolumeX } from "lucide-react";
+import { Loader2, Sparkles, Edit2, ChevronRight, Volume2, VolumeX, Play, Share2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const MOOD_EMOJI: Record<string, string> = {
@@ -30,6 +30,8 @@ export default function SealPage() {
   const [sealing, setSealing] = useState(false);
   const [planId, setPlanId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [published, setPublished] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
@@ -147,12 +149,45 @@ export default function SealPage() {
           </div>
         )}
 
-        <button
-          onClick={() => router.push(`/plan/${planId}`)}
-          className="w-full py-4 rounded-xl bg-primary text-white font-semibold flex items-center justify-center gap-2 hover:bg-primary-light transition-colors"
-        >
-          Vai al tuo piano <ChevronRight size={18} />
-        </button>
+        <div className="w-full flex flex-col gap-3">
+          <button
+            onClick={() => router.push(`/plan/${planId}/play`)}
+            className="w-full py-4 rounded-xl bg-primary text-white font-semibold flex items-center justify-center gap-2 hover:bg-primary-light transition-colors shadow-lg shadow-primary/25"
+          >
+            <Play size={20} /> Gioca Ora
+          </button>
+          {!published ? (
+            <button
+              onClick={async () => {
+                setPublishLoading(true);
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) return;
+                const res = await fetch(`/api/plans/${planId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                  body: JSON.stringify({ is_published: true }),
+                });
+                if (res.ok) setPublished(true);
+                setPublishLoading(false);
+              }}
+              disabled={publishLoading}
+              className="w-full py-3.5 rounded-xl bg-accent text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-accent/25 disabled:opacity-50"
+            >
+              {publishLoading ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />}
+              Pubblica nel Marketplace
+            </button>
+          ) : (
+            <p className="w-full py-3.5 rounded-xl bg-success/10 text-success font-semibold text-center text-sm">
+              Pubblicato nel Marketplace!
+            </p>
+          )}
+          <button
+            onClick={() => router.push(`/plan/${planId}`)}
+            className="w-full py-3 rounded-xl glass border border-glass-border text-foreground/60 font-medium flex items-center justify-center gap-2 hover:border-primary/40 transition-colors"
+          >
+            Vedi dettagli <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
     );
   }

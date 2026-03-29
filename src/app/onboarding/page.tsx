@@ -11,6 +11,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
+  const [nickname, setNickname] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -26,6 +27,7 @@ export default function OnboardingPage() {
   }, [router]);
 
   async function handleStart() {
+    if (!nickname.trim()) { setError("Scegli un nickname"); return; }
     setLoading(true);
     setError(null);
     const { data: { session } } = await supabase.auth.getSession();
@@ -37,7 +39,7 @@ export default function OnboardingPage() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ display_name: nickname.trim() }),
     });
 
     if (!res.ok) {
@@ -67,12 +69,21 @@ export default function OnboardingPage() {
           Esplora le città come un gioco. Ad ogni viaggio definirai il tuo mood e comporrai un mazzo unico di esperienze.
         </p>
 
+        <input
+          type="text"
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          placeholder="Scegli il tuo nickname"
+          maxLength={30}
+          className="w-full max-w-xs px-4 py-3 rounded-xl glass border border-glass-border text-foreground text-center placeholder:text-foreground/30 outline-none focus:border-primary/50 transition-colors"
+        />
+
         {error && <p className="text-danger text-sm">{error}</p>}
 
         <button
           onClick={handleStart}
-          disabled={loading}
-          className="flex items-center gap-2 px-8 py-3.5 rounded-xl bg-primary text-white font-semibold hover:bg-primary-light transition-colors"
+          disabled={loading || !nickname.trim()}
+          className="flex items-center gap-2 px-8 py-3.5 rounded-xl bg-primary text-white font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
         >
           {loading ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
           Inizia

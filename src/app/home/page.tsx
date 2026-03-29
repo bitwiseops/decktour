@@ -143,7 +143,7 @@ export default function HomePage() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-bold">I miei piani</h2>
-            <Link href="/marketplace?tab=mine" className="text-xs text-primary/70 flex items-center gap-1">
+            <Link href="/marketplace?mine=1" className="text-xs text-primary/70 flex items-center gap-1">
               Vedi tutti <ChevronRight size={12} />
             </Link>
           </div>

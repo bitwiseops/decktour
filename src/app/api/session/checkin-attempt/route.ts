@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000; // metres
@@ -18,7 +18,8 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { progress_id, user_lat, user_lon } = await req.json() as { progress_id: string; user_lat: number; user_lon: number };
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
 
     // Verify ownership
     const { data: progress } = await db

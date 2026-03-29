@@ -32,8 +32,8 @@ function FiltersInner({ cities, currentCity, currentMood, mine }: {
     const params = new URLSearchParams();
     if (currentCity) params.set("city_id", currentCity);
     if (currentMood) params.set("mood", currentMood);
-    // mine=0 → explore all; default (no param) → my plans
-    if (mine) params.set("mine", "0");
+    // mine=1 → my plans; default (no param) → explore all
+    if (!mine) params.set("mine", "1");
     router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
   }
 

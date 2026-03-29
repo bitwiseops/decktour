@@ -14,8 +14,8 @@ async function getPlans(cityId?: string, mood?: string): Promise<PlanCard[]> {
   const db = getServerSupabase();
   let query = db
     .from("plans")
-    .select(`id, title, diary_blurred, avg_rating, times_played, valid_from, valid_until, moods_summary,
-             cities!city_id(name, cover_url), creator:creator_id(email)`)
+    .select(`id, title, diary_blurred, avg_rating, times_played, valid_from, valid_until, moods_summary, creator_id,
+             cities!city_id(name, cover_url)`)
     .eq("is_published", true)
     .order("avg_rating", { ascending: false })
     .order("times_played", { ascending: false })
@@ -23,19 +23,34 @@ async function getPlans(cityId?: string, mood?: string): Promise<PlanCard[]> {
 
   if (cityId) query = query.eq("city_id", cityId);
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) {
+    console.error("marketplace getPlans error:", error.message, error.details, error.hint);
+  }
   const results = (data ?? []) as unknown as Array<{
     id: string; title: string; diary_blurred: string | null; avg_rating: number;
     times_played: number; valid_from: string | null; valid_until: string | null;
-    moods_summary: Record<string, number> | null;
+    moods_summary: Record<string, number> | null; creator_id: string | null;
     cities: { name: string; cover_url: string | null } | null;
-    creator: { email: string } | null;
   }>;
 
   let filtered = results;
   if (mood) {
     const moodKey = `mood_${mood}`;
     filtered = results.filter((p) => (p.moods_summary?.[moodKey] ?? 0) >= 60);
+  }
+
+  // Fetch creator display names from player_profiles
+  const creatorIds = [...new Set(filtered.map(p => p.creator_id).filter(Boolean))] as string[];
+  const profileMap: Record<string, string> = {};
+  if (creatorIds.length > 0) {
+    const { data: profiles } = await db
+      .from("player_profiles")
+      .select("user_id, display_name")
+      .in("user_id", creatorIds);
+    for (const p of profiles ?? []) {
+      if (p.display_name) profileMap[p.user_id] = p.display_name;
+    }
   }
 
   return filtered.map((p) => ({
@@ -48,7 +63,7 @@ async function getPlans(cityId?: string, mood?: string): Promise<PlanCard[]> {
     valid_until: p.valid_until,
     city_name: p.cities?.name ?? null,
     cover_url: p.cities?.cover_url ?? null,
-    creator_email: p.creator?.email ? p.creator.email.split("@")[0] : "Anonimo",
+    creator_email: (p.creator_id && profileMap[p.creator_id]) || "Esploratore",
   }));
 }
 
@@ -64,8 +79,8 @@ interface Props {
 
 export default async function MarketplacePage({ searchParams }: Props) {
   const params = await searchParams;
-  // Default to "my plans" view; switch to all plans only when mine=0 is explicit
-  const isMine = params.mine !== "0";
+  // Default to community plans; switch to "my plans" only when mine=1 is explicit
+  const isMine = params.mine === "1";
 
   const [plans, cities] = await Promise.all([
     isMine ? Promise.resolve([]) : getPlans(params.city_id, params.mood),

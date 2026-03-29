@@ -26,7 +26,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const user = await getAuthUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
+
     // Verify ownership
     const { data: plan } = await db.from("plans").select("creator_id").eq("id", id).single();
     if (!plan || plan.creator_id !== user.id) {

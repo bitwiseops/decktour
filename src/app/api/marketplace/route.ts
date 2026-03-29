@@ -13,9 +13,8 @@ export async function GET(req: NextRequest) {
   let query = db
     .from("plans")
     .select(
-      `id, title, diary_blurred, avg_rating, times_played, valid_from, valid_until, moods_summary,
-       cities!city_id(name, cover_url),
-       creator:creator_id(email)`
+      `id, title, diary_blurred, avg_rating, times_played, valid_from, valid_until, moods_summary, creator_id,
+       cities!city_id(name, cover_url)`
     )
     .eq("is_published", true)
     .order("avg_rating", { ascending: false })
@@ -43,7 +42,6 @@ export async function GET(req: NextRequest) {
 
   const plans = results.map((p) => {
     const city = (Array.isArray(p.cities) ? p.cities[0] : p.cities) as { name: string; cover_url: string | null } | null;
-    const creator = (Array.isArray(p.creator) ? p.creator[0] : p.creator) as { email: string } | null;
     return {
       id: p.id,
       title: p.title,
@@ -54,7 +52,7 @@ export async function GET(req: NextRequest) {
       valid_until: p.valid_until,
       city_name: city?.name ?? null,
       cover_url: city?.cover_url ?? null,
-      creator_email: creator?.email ? creator.email.split("@")[0] : "Anonimo",
+      creator_id: p.creator_id,
     };
   });
 

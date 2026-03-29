@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 
 interface DeckCard { card_id: string; rarity: string; weight: number; }
 
@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { session_token, stop_index } = await req.json();
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
 
     const { data: sess } = await db
       .from("planning_sessions")

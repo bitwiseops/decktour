@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,7 +10,8 @@ export async function GET(req: NextRequest) {
     const progress_id = req.nextUrl.searchParams.get("progress_id");
     if (!progress_id) return NextResponse.json({ error: "Missing progress_id" }, { status: 400 });
 
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
 
     const { data: progress } = await db
       .from("session_card_progress")

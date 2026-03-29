@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 import { log, error as logError } from "@/lib/logger";
 
 interface DeckCard { card_id: string; rarity: string; weight: number; }
@@ -30,7 +30,8 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { session_token, stop_index, day_number, position, picked_card_id } = await req.json();
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
 
     // Verify session belongs to user
     const { data: sess } = await db
@@ -106,7 +107,8 @@ export async function DELETE(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { session_token, undo_to_index } = await req.json();
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
 
     const { data: sess } = await db
       .from("planning_sessions")

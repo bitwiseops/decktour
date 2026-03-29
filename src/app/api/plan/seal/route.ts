@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase, getAuthedSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic();
@@ -18,11 +18,10 @@ export async function POST(req: NextRequest) {
 
     const { session_token, custom_title } = await req.json() as { session_token: string; custom_title?: string };
     const token = req.headers.get("authorization")!.slice(7);
-    const db = getServerSupabase();
     const authedDb = getAuthedSupabase(token);
 
     // Load planning session
-    const { data: sess } = await db
+    const { data: sess } = await authedDb
       .from("planning_sessions")
       .select("*")
       .eq("id", session_token)
@@ -107,7 +106,7 @@ Rispondi SOLO con il JSON. Formato: {"title":"...","diary_blurred":"..."}
     }
 
     // Delete planning session
-    await db.from("planning_sessions").delete().eq("id", session_token);
+    await authedDb.from("planning_sessions").delete().eq("id", session_token);
 
     return NextResponse.json({ plan_id: plan.id, title: finalTitle, diary_blurred });
   } catch (err) {

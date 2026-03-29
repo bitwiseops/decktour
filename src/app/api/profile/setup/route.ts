@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase";
+import { getAuthedSupabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // Read display_name and avatar_url from Supabase user metadata (set by Google OAuth etc.)
+    const body = await req.json().catch(() => ({})) as { display_name?: string };
+
+    // Prefer nickname from body, fallback to OAuth metadata
     const meta = (user.user_metadata ?? {}) as Record<string, string>;
-    const display_name = meta.full_name ?? meta.name ?? user.email?.split("@")[0] ?? null;
+    const display_name = body.display_name?.trim() || meta.full_name || meta.name || user.email?.split("@")[0] || null;
     const avatar_url = meta.avatar_url ?? meta.picture ?? null;
 
-    const db = getServerSupabase();
+    const token = req.headers.get("authorization")!.slice(7);
+    const db = getAuthedSupabase(token);
     const { error } = await db.from("player_profiles").upsert(
       {
         user_id: user.id,
