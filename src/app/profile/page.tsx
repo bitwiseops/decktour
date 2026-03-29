@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { Trophy, Map, Star, Loader2 } from "lucide-react";
-import { MoodRadar } from "@/components/game/MoodRadar";
 import { supabase } from "@/lib/supabase";
-import type { MoodProfile } from "@/lib/types";
 
 interface Stats {
   total_score: number;
@@ -21,7 +19,6 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState<string>("Esploratore");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
-  const [moodProfile, setMoodProfile] = useState<MoodProfile | null>(null);
   const [stats, setStats] = useState<Stats>({ total_score: 0, plan_count: 0, sessions_count: 0 });
 
   useEffect(() => {
@@ -36,24 +33,7 @@ export default function ProfilePage() {
       setDisplayName(meta?.full_name ?? meta?.name ?? user.email?.split("@")[0] ?? "Esploratore");
       setAvatarUrl(meta?.avatar_url ?? meta?.picture ?? null);
 
-      // Load mood profile from DB
-      const { data: pp } = await supabase
-        .from("player_profiles")
-        .select("mood_art,mood_food,mood_nature,mood_shopping,mood_nightlife")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (pp) {
-        setMoodProfile({
-          art: pp.mood_art,
-          food: pp.mood_food,
-          nature: pp.mood_nature,
-          shopping: pp.mood_shopping,
-          nightlife: pp.mood_nightlife,
-        });
-      }
-
-      // Load stats in parallel
+      // Load stats
       const [plansRes, sessionsRes, lbRes] = await Promise.all([
         supabase.from("plans").select("id", { count: "exact", head: true }).eq("creator_id", user.id),
         supabase.from("game_sessions").select("id", { count: "exact", head: true }).eq("explorer_id", user.id).eq("status", "completed"),
@@ -121,23 +101,16 @@ export default function ProfilePage() {
         </div>
       </motion.div>
 
-      {/* Mood radar */}
-      {moodProfile ? (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="glass rounded-2xl p-6"
-        >
-          <h3 className="text-sm font-medium text-foreground/40 uppercase tracking-wider mb-4">Il tuo DNA da viaggiatore</h3>
-          <MoodRadar profile={moodProfile} size={280} />
-        </motion.div>
-      ) : (
-        <div className="text-center py-8">
-          <p className="text-foreground/40 mb-2">Profilo mood non creato</p>
-          <a href="/onboarding" className="text-primary font-medium">Crea il tuo profilo</a>
-        </div>
-      )}
+      {/* Hint: mood is per-plan */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="glass rounded-2xl p-6 text-center"
+      >
+        <p className="text-foreground/40 text-sm">Il tuo DNA da viaggiatore viene definito ad ogni nuovo piano.</p>
+        <a href="/plan/new" className="text-primary font-medium text-sm mt-2 inline-block">Crea un nuovo piano</a>
+      </motion.div>
     </div>
   );
 }

@@ -4,12 +4,30 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { MapPin, Calendar, Layers, Clock, Loader2, ChevronLeft, ChevronRight, Search, Volume2, VolumeX } from "lucide-react";
+import { MapPin, Calendar, Layers, Clock, Loader2, ChevronLeft, ChevronRight, Search, Volume2, VolumeX, ArrowRight, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { MoodRadar } from "@/components/game/MoodRadar";
 
 interface City { id: string; name: string; country: string; cover_url?: string | null; audio_url?: string | null; }
 
+const MOOD_SLIDERS = [
+  { key: "mood_art", label: "Arte & Storia", emoji: "🏛️" },
+  { key: "mood_food", label: "Enogastronomia", emoji: "🍷" },
+  { key: "mood_nature", label: "Natura & Outdoor", emoji: "🌿" },
+  { key: "mood_shopping", label: "Acquisti", emoji: "🛍️" },
+  { key: "mood_nightlife", label: "Vita Notturna", emoji: "🌙" },
+] as const;
 
+type MoodKey = (typeof MOOD_SLIDERS)[number]["key"];
+type MoodValues = Record<MoodKey, number>;
+
+const MOOD_DEFAULTS: MoodValues = {
+  mood_art: 50, mood_food: 50, mood_nature: 50, mood_shopping: 50, mood_nightlife: 50,
+};
+
+function toRadarProfile(v: MoodValues) {
+  return { art: v.mood_art, food: v.mood_food, nature: v.mood_nature, shopping: v.mood_shopping, nightlife: v.mood_nightlife };
+}
 
 const DURATIONS = [
   { value: "1h", label: "1 ora" },
@@ -139,10 +157,19 @@ export default function NewPlanPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingCities, setLoadingCities] = useState(true);
+  const [step, setStep] = useState<"mood" | "plan">("mood");
+  const [moodValues, setMoodValues] = useState<MoodValues>({ ...MOOD_DEFAULTS });
+  const [radarProfile, setRadarProfile] = useState(toRadarProfile(MOOD_DEFAULTS));
   const [calOpen, setCalOpen] = useState<"from" | "to" | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
+  // City request
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [requestCountry, setRequestCountry] = useState("");
+  const [requestLoading, setRequestLoading] = useState(false);
+  const [requestMessage, setRequestMessage] = useState<string | null>(null);
+  const [completedRequests, setCompletedRequests] = useState<{ city_name: string; city_id: string }[]>([]);
 
   // Play city audio when city changes
   useEffect(() => {
@@ -225,6 +252,61 @@ export default function NewPlanPage() {
     } catch { /* ignore */ }
   }, [cityId, dateFrom, dateTo, stopsPerDay, stopDuration]);
 
+  // Load completed city requests on mount
+  useEffect(() => {
+    async function loadRequests() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch("/api/cities/request", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) return;
+      const reqs = await res.json() as { city_name: string; city_id: string | null; status: string }[];
+      setCompletedRequests(
+        reqs.filter(r => r.status === "completed" && r.city_id)
+          .map(r => ({ city_name: r.city_name, city_id: r.city_id! }))
+      );
+    }
+    loadRequests();
+  }, []);
+
+  async function handleCityRequest() {
+    if (!citySearch.trim() || !requestCountry.trim()) return;
+    setRequestLoading(true);
+    setRequestMessage(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { router.replace("/"); return; }
+
+    const res = await fetch("/api/cities/request", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ city_name: citySearch.trim(), country: requestCountry.trim() }),
+    });
+
+    const data = await res.json();
+    if (data.status === "already_exists") {
+      setRequestMessage("Questa città è già disponibile!");
+      // Reload cities
+      const citiesRes = await fetch("/api/cities");
+      if (citiesRes.ok) {
+        const newCities = await citiesRes.json() as City[];
+        setCities(newCities);
+        setCityId(data.city_id);
+      }
+    } else if (data.status === "already_requested") {
+      setRequestMessage("Questa città è già stata richiesta ed è in preparazione.");
+    } else if (data.status === "requested") {
+      setRequestMessage("Richiesta inviata! La città sarà disponibile a breve (~2 min).");
+    } else {
+      setRequestMessage(data.error ?? "Errore nella richiesta.");
+    }
+    setRequestLoading(false);
+    setShowRequestForm(false);
+  }
+
   const filteredCities = cities.filter(c =>
     citySearch === "" ||
     c.name.toLowerCase().includes(citySearch.toLowerCase()) ||
@@ -237,11 +319,26 @@ export default function NewPlanPage() {
     return `${d} ${MONTHS_IT[parseInt(m) - 1].slice(0, 3)} ${y}`;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleMoodChange(key: MoodKey, val: number) {
+    const next = { ...moodValues, [key]: val };
+    setMoodValues(next);
+    setRadarProfile(toRadarProfile(next));
+  }
+
+  function handleGoToPlan() {
+    setError(null);
+    setStep("plan");
+  }
+
+  function handleSubmitPlan(e: React.FormEvent) {
     e.preventDefault();
     if (!cityId || !dateFrom || !dateTo) { setError("Compila tutti i campi."); return; }
     if (dateFrom > dateTo) { setError("La data di fine deve essere successiva alla data di inizio."); return; }
+    setError(null);
+    handleSubmitWithMood();
+  }
 
+  async function handleSubmitWithMood() {
     setLoading(true);
     setError(null);
 
@@ -254,7 +351,11 @@ export default function NewPlanPage() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ city_id: cityId, date_from: dateFrom, date_to: dateTo, stops_per_day: stopsPerDay, stop_duration: stopDuration }),
+      body: JSON.stringify({
+        city_id: cityId, date_from: dateFrom, date_to: dateTo,
+        stops_per_day: stopsPerDay, stop_duration: stopDuration,
+        ...moodValues,
+      }),
     });
 
     if (!res.ok) {
@@ -284,7 +385,60 @@ export default function NewPlanPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-8">
+      <AnimatePresence mode="wait">
+      {step === "mood" ? (
+        <motion.div
+          key="mood"
+          initial={{ opacity: 0, x: -40 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 40 }}
+          className="flex flex-col gap-5"
+        >
+          <div className="mb-2">
+            <h1 className="text-2xl font-bold mb-1">Il tuo DNA da viaggiatore</h1>
+            <p className="text-foreground/50 text-sm">Definisci il mood per questo viaggio. Guiderà la selezione delle tappe.</p>
+          </div>
+
+          <MoodRadar profile={radarProfile} size={260} />
+
+          <div className="flex flex-col gap-5">
+            {MOOD_SLIDERS.map(({ key, label, emoji }) => (
+              <div key={key}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-sm font-medium">{emoji} {label}</span>
+                  <span className="text-sm font-bold text-primary">{moodValues[key]}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={moodValues[key]}
+                  onChange={(e) => handleMoodChange(key, Number(e.target.value))}
+                  className="w-full h-2 rounded-full appearance-none cursor-pointer accent-primary bg-white/10"
+                />
+                <div className="flex justify-between text-xs text-foreground/30 mt-1">
+                  <span>Non mi interessa</span>
+                  <span>Mi appassiona</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoToPlan}
+            className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-base hover:bg-primary-light transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
+          >
+            <ArrowRight size={18} />
+            Pianifica il viaggio
+          </button>
+        </motion.div>
+      ) : (
+      <motion.div key="plan" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
       <div className="mb-6">
+        <button type="button" onClick={() => setStep("mood")} className="flex items-center gap-1 text-sm text-foreground/50 hover:text-foreground transition-colors mb-3">
+          <ArrowLeft size={14} /> Modifica mood
+        </button>
         <h1 className="text-2xl font-bold mb-1">Pianifica il viaggio</h1>
         <p className="text-foreground/50 text-sm">Scegli dove e quando. Poi componiamo il mazzo insieme.</p>
       </div>
@@ -295,7 +449,7 @@ export default function NewPlanPage() {
         <motion.form
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          onSubmit={handleSubmit}
+          onSubmit={handleSubmitPlan}
           className="flex flex-col gap-5"
         >
           {/* ── City selector ── */}
@@ -365,10 +519,80 @@ export default function NewPlanPage() {
                   </button>
                 );
               })}
-              {filteredCities.length === 0 && (
+              {filteredCities.length === 0 && citySearch && (
+                <div className="col-span-2 text-center py-4">
+                  <p className="text-sm text-foreground/40 mb-2">Non abbiamo ancora &quot;{citySearch}&quot;</p>
+                  {!showRequestForm ? (
+                    <button type="button" onClick={() => setShowRequestForm(true)}
+                      className="text-primary text-sm font-medium hover:underline">
+                      Richiedi questa città
+                    </button>
+                  ) : (
+                    <div className="flex gap-2 items-center justify-center">
+                      <input
+                        type="text"
+                        placeholder="Paese (es. Italia)"
+                        value={requestCountry}
+                        onChange={e => setRequestCountry(e.target.value)}
+                        className="bg-white/5 border border-glass-border rounded-lg px-3 py-2 text-sm w-36 outline-none focus:border-primary/50"
+                      />
+                      <button type="button" onClick={handleCityRequest} disabled={requestLoading || !requestCountry.trim()}
+                        className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-50">
+                        {requestLoading ? <Loader2 size={14} className="animate-spin" /> : "Richiedi"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {filteredCities.length === 0 && !citySearch && (
                 <p className="col-span-2 text-center text-sm text-foreground/30 py-4">Nessuna città trovata</p>
               )}
             </div>
+
+            {/* Request message */}
+            {requestMessage && (
+              <p className="text-sm text-accent mt-2 text-center">{requestMessage}</p>
+            )}
+
+            {/* Completed requests notification */}
+            {completedRequests.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {completedRequests.map(r => (
+                  <button key={r.city_id} type="button"
+                    onClick={() => {
+                      setCityId(r.city_id);
+                      setCitySearch("");
+                      // Reload cities to include the new one
+                      fetch("/api/cities").then(res => res.json()).then((data: City[]) => setCities(data)).catch(() => {});
+                    }}
+                    className="w-full text-sm text-left px-3 py-2 rounded-lg bg-success/10 text-success hover:bg-success/20 transition-colors">
+                    {r.city_name} è ora disponibile!
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Always visible link */}
+            {filteredCities.length > 0 && !showRequestForm && (
+              <button type="button" onClick={() => setShowRequestForm(true)}
+                className="text-xs text-foreground/30 hover:text-primary transition-colors mt-2">
+                Non trovi la tua città? Richiedila
+              </button>
+            )}
+            {showRequestForm && filteredCities.length > 0 && (
+              <div className="flex gap-2 items-center mt-2">
+                <input type="text" placeholder="Nome città" value={citySearch}
+                  onChange={e => setCitySearch(e.target.value)}
+                  className="bg-white/5 border border-glass-border rounded-lg px-3 py-2 text-sm flex-1 outline-none focus:border-primary/50" />
+                <input type="text" placeholder="Paese" value={requestCountry}
+                  onChange={e => setRequestCountry(e.target.value)}
+                  className="bg-white/5 border border-glass-border rounded-lg px-3 py-2 text-sm w-28 outline-none focus:border-primary/50" />
+                <button type="button" onClick={handleCityRequest} disabled={requestLoading || !citySearch.trim() || !requestCountry.trim()}
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-50 shrink-0">
+                  {requestLoading ? <Loader2 size={14} className="animate-spin" /> : "Richiedi"}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Date range picker ── */}
@@ -482,11 +706,14 @@ export default function NewPlanPage() {
 
           <button type="submit" disabled={loading || !cityId || !dateFrom || !dateTo}
             className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-base hover:bg-primary-light transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/25 disabled:opacity-50">
-            {loading && <Loader2 size={18} className="animate-spin" />}
-            Inizia ora →
+            {loading ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+            Componi il mazzo
           </button>
         </motion.form>
       )}
+      </motion.div>
+      )}
+      </AnimatePresence>
     </div>
   );
 }

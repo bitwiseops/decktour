@@ -8,6 +8,11 @@ interface InitRequest {
   date_to: string;
   stops_per_day: number;
   stop_duration: string;
+  mood_art: number;
+  mood_food: number;
+  mood_nature: number;
+  mood_shopping: number;
+  mood_nightlife: number;
 }
 
 interface DeckCard {
@@ -49,23 +54,21 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as InitRequest;
     const db = getServerSupabase();
 
-    // Get user mood profile
-    const { data: playerProfile } = await db
-      .from("player_profiles")
-      .select("mood_art,mood_food,mood_nature,mood_shopping,mood_nightlife")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (!playerProfile) {
-      return NextResponse.json({ error: "Player profile not found. Complete onboarding first." }, { status: 400 });
-    }
-
+    // Mood profile comes from the request (per-plan, not per-user)
     const moods: Record<string, number> = {
-      arte_storia: playerProfile.mood_art,
-      enogastronomia: playerProfile.mood_food,
-      natura_outdoor: playerProfile.mood_nature,
-      acquisti: playerProfile.mood_shopping,
-      vita_notturna: playerProfile.mood_nightlife,
+      arte_storia: body.mood_art ?? 50,
+      enogastronomia: body.mood_food ?? 50,
+      natura_outdoor: body.mood_nature ?? 50,
+      acquisti: body.mood_shopping ?? 50,
+      vita_notturna: body.mood_nightlife ?? 50,
+    };
+
+    const moodSnapshot = {
+      mood_art: body.mood_art ?? 50,
+      mood_food: body.mood_food ?? 50,
+      mood_nature: body.mood_nature ?? 50,
+      mood_shopping: body.mood_shopping ?? 50,
+      mood_nightlife: body.mood_nightlife ?? 50,
     };
 
     // Calculate days and stops
@@ -104,8 +107,8 @@ export async function POST(req: NextRequest) {
 
       let weight: number;
       if (c.rarity === "common") weight = 70 * affinity;
-      else if (c.rarity === "rare") weight = 25;
-      else weight = 5; // secret
+      else if (c.rarity === "rare") weight = 25 * affinity;
+      else weight = 5; // secret — peso fisso, sorpresa
 
       return { card_id: c.id, rarity: c.rarity, weight: Math.max(weight, 0.1) };
     });
@@ -126,6 +129,7 @@ export async function POST(req: NextRequest) {
         num_days,
         total_stops,
         deck: deck,
+        moods_snapshot: moodSnapshot,
         picks: [],
         current_trio: first_trio,
         reshuffle_count: 0,

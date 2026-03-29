@@ -31,14 +31,8 @@ export async function POST(req: NextRequest) {
 
     if (!sess) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
-    // Load user mood profile
-    const { data: profile } = await db
-      .from("player_profiles")
-      .select("mood_art,mood_food,mood_nature,mood_shopping,mood_nightlife")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    const moods = profile ?? { mood_art: 50, mood_food: 50, mood_nature: 50, mood_shopping: 50, mood_nightlife: 50 };
+    // Get mood profile from planning session (per-plan, not per-user)
+    const moods = (sess.moods_snapshot as Record<string, number> | null) ?? { mood_art: 50, mood_food: 50, mood_nature: 50, mood_shopping: 50, mood_nightlife: 50 };
     const picks = (sess.picks ?? []) as Array<{ card_id: string; day_number: number; position: number; mood_tags: string[]; rarity: string }>;
 
     // First AI call — generate title + diary_blurred

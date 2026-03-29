@@ -73,7 +73,7 @@ export default function AuthPage() {
       // login
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      if (data.session) await redirectAfterLogin(data.session.access_token);
+      if (data.session) await redirectAfterLogin(data.session.user.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Errore di autenticazione");
       setLoading(false);

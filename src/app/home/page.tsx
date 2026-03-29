@@ -8,14 +8,6 @@ import { motion } from "framer-motion";
 import { MapPin, Plus, Trophy, Compass, Loader2, LogOut, Play, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-interface PlayerProfile {
-  mood_art: number;
-  mood_food: number;
-  mood_nature: number;
-  mood_shopping: number;
-  mood_nightlife: number;
-}
-
 interface MyPlan {
   id: string;
   title: string;
@@ -29,7 +21,6 @@ export default function HomePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [myPlans, setMyPlans] = useState<MyPlan[]>([]);
 
   useEffect(() => {
@@ -38,14 +29,14 @@ export default function HomePage() {
       if (!session) { router.replace("/"); return; }
       setEmail(session.user.email ?? null);
 
+      // Ensure player_profiles record exists (for stats, etc.)
       const { data: pp } = await supabase
         .from("player_profiles")
-        .select("mood_art,mood_food,mood_nature,mood_shopping,mood_nightlife")
+        .select("id")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
       if (!pp) { router.replace("/onboarding"); return; }
-      setProfile(pp);
 
       const plansRes = await fetch("/api/plans/mine", {
         headers: { Authorization: `Bearer ${session.access_token}` },
@@ -66,15 +57,6 @@ export default function HomePage() {
     return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary" size={32} /></div>;
   }
 
-  const topMood = profile
-    ? Object.entries({
-        "Arte & Storia": profile.mood_art,
-        "Enogastronomia": profile.mood_food,
-        "Natura": profile.mood_nature,
-        "Acquisti": profile.mood_shopping,
-        "Nightlife": profile.mood_nightlife,
-      }).sort((a, b) => b[1] - a[1])[0][0]
-    : null;
 
   const CARDS = [
     {
@@ -104,7 +86,7 @@ export default function HomePage() {
     {
       href: "/profile",
       label: "Profilo",
-      sub: "Il tuo DNA da viaggiatore",
+      sub: "I tuoi dati e attività",
       icon: <Compass size={20} className="text-white" />,
       accent: "from-primary-light/80",
       photo: "https://images.unsplash.com/photo-1539635278303-d4002c07eae3?w=600&q=80",
@@ -118,7 +100,6 @@ export default function HomePage() {
         <div>
           <p className="text-xs text-foreground/40 mb-0.5">Benvenuto</p>
           <h1 className="text-xl font-bold truncate max-w-48">{email?.split("@")[0]}</h1>
-          {topMood && <p className="text-xs text-primary/80 mt-0.5">Top mood: {topMood}</p>}
         </div>
         <button onClick={handleLogout} className="glass rounded-xl p-2.5 text-foreground/40 hover:text-danger transition-colors">
           <LogOut size={18} />

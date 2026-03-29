@@ -152,6 +152,7 @@ CREATE TABLE public.planning_sessions (
   picks jsonb NOT NULL DEFAULT '[]'::jsonb,
   current_trio jsonb,
   reshuffle_count integer NOT NULL DEFAULT 0,
+  moods_snapshot jsonb DEFAULT '{}'::jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   expires_at timestamp with time zone NOT NULL DEFAULT (now() + '24:00:00'::interval),
   CONSTRAINT planning_sessions_pkey PRIMARY KEY (id),
@@ -271,3 +272,17 @@ CREATE TABLE public.user_badges (
   CONSTRAINT user_badges_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT user_badges_badge_id_fkey FOREIGN KEY (badge_id) REFERENCES public.badges(id)
 );
+CREATE TABLE public.city_requests (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES auth.users(id),
+  city_name text NOT NULL,
+  country text NOT NULL,
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'processing', 'completed', 'rejected')),
+  city_id uuid REFERENCES public.cities(id),
+  created_at timestamptz DEFAULT now(),
+  processed_at timestamptz
+);
+CREATE UNIQUE INDEX city_requests_unique_pending
+  ON public.city_requests (lower(city_name), lower(country))
+  WHERE status IN ('pending', 'processing');

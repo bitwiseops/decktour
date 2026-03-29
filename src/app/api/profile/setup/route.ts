@@ -7,14 +7,6 @@ export async function POST(req: NextRequest) {
     const user = await getAuthUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = await req.json() as {
-      mood_art: number;
-      mood_food: number;
-      mood_nature: number;
-      mood_shopping: number;
-      mood_nightlife: number;
-    };
-
     // Read display_name and avatar_url from Supabase user metadata (set by Google OAuth etc.)
     const meta = (user.user_metadata ?? {}) as Record<string, string>;
     const display_name = meta.full_name ?? meta.name ?? user.email?.split("@")[0] ?? null;
@@ -26,11 +18,6 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         display_name,
         avatar_url,
-        mood_art: body.mood_art,
-        mood_food: body.mood_food,
-        mood_nature: body.mood_nature,
-        mood_shopping: body.mood_shopping,
-        mood_nightlife: body.mood_nightlife,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }
